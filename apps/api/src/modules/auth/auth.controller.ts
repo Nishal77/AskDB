@@ -1,0 +1,46 @@
+import { Controller, Post, Body, UseGuards, Get, HttpCode, HttpStatus, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ApiResponse } from '../../common/utils/response.util';
+
+@Controller('auth')
+export class AuthController {
+  constructor(private authService: AuthService) {}
+
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  async register(@Body() registerDto: RegisterDto) {
+    try {
+      const user = await this.authService.register(registerDto);
+      return ApiResponse.success(user, 'User registered successfully');
+    } catch (error: any) {
+      // Return proper error response
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
+        throw error;
+      }
+      console.error('Registration error:', error);
+      throw new BadRequestException(error?.message || 'Registration failed');
+    }
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() loginDto: LoginDto) {
+    try {
+      const result = await this.authService.login(loginDto);
+      return ApiResponse.success(result, 'Login successful');
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  async getProfile(@CurrentUser() user: any) {
+    return ApiResponse.success(user, 'Profile retrieved successfully');
+  }
+}
+

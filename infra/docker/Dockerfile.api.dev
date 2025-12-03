@@ -1,0 +1,40 @@
+# Use a Debian-based full image (NOT slim, NOT alpine)
+FROM node:20-bullseye AS base
+
+# Install required system libs for Prisma
+RUN apt-get update -y && \
+    apt-get install -y openssl ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Enable pnpm
+RUN corepack enable && corepack prepare pnpm@8.15.0 --activate
+
+WORKDIR /app
+
+# Copy workspace root files
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+
+# Copy sub-packages package.json (speeds up pnpm install)
+COPY apps/api/package.json ./apps/api/
+COPY packages/types/package.json ./packages/types/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/prisma/package.json ./packages/prisma/
+COPY packages/embeddings/package.json ./packages/embeddings/
+
+# Install dependencies in workspace
+RUN pnpm install --filter @askdb/api...
+
+# Copy all the actual source code
+COPY . .
+
+# Generate prisma client (inside correct workspace)
+WORKDIR /app/packages/prisma
+RUN pnpm prisma generate
+
+# API dev server runs from apps/api
+WORKDIR /app/apps/api
+
+EXPOSE 3000
+
+CMD ["pnpm", "dev"]

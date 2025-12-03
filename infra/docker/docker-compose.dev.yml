@@ -1,0 +1,90 @@
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: askdb-postgres-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: askyourdatabase
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - askdb-network
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api.dev
+    container_name: askdb-api-dev
+    env_file:
+      - ../../.env
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/askyourdatabase?schema=public
+      JWT_SECRET: ${JWT_SECRET:-95hM8HYWgGmKIVw/tfIS59zzb0Vc4E8myGbVOZESuT0=}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      OPENROUTER_API_KEY: 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
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4-turbo-preview}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      VECTOR_DB_HOST: postgres
+      VECTOR_DB_PORT: 5432
+      VECTOR_DB_DATABASE: askyourdatabase
+      VECTOR_DB_USER: postgres
+      VECTOR_DB_PASSWORD: postgres
+      FRONTEND_URL: http://localhost:3001
+    ports:
+      - '3000:3000'
+    volumes:
+      - ../../apps/api:/app/apps/api
+      - ../../packages:/app/packages
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - api_dist:/app/apps/api/dist
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - askdb-network
+    # Command is handled by Dockerfile CMD
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web.dev
+    container_name: askdb-web-dev
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
+    ports:
+      - '3001:3000'
+    volumes:
+      - ../../apps/web:/app/apps/web
+      - ../../packages:/app/packages
+      - /app/node_modules
+      - /app/apps/web/node_modules
+      - /app/apps/web/.next
+    depends_on:
+      - api
+    networks:
+      - askdb-network
+    command: pnpm --filter @askdb/web dev
+    restart: unless-stopped
+
+volumes:
+  postgres_data_dev:
+  api_dist:
+
+networks:
+  askdb-network:
+    driver: bridge
+

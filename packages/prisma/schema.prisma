@@ -1,0 +1,85 @@
+// This is your Prisma schema file for AskYourDatabase
+// Update this file with your actual database schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String?  // Optional for OAuth users
+  name      String?
+  phone     String?
+  
+  // OAuth fields (for future Google OAuth integration)
+  provider        String?  // 'google' | 'email' | null
+  providerId      String?  // OAuth provider user ID
+  providerEmail   String?  // Email from OAuth provider
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  databaseConnections DatabaseConnection[]
+  queryHistories     QueryHistory[]
+  auditLogs          AuditLog[]
+
+  @@index([email])
+  @@index([provider, providerId])
+}
+
+model DatabaseConnection {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  connectionString String? // Store the original connection string/URL
+  anonKey         String?  // Store anon key (for Supabase and similar services)
+  host            String
+  port            Int
+  database        String
+  username        String
+  password        String // In production, encrypt this
+  type            String   // 'postgresql' | 'mysql' | 'sqlite'
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  queryHistories QueryHistory[]
+}
+
+model QueryHistory {
+  id                   String   @id @default(cuid())
+  userId               String
+  connectionId         String
+  naturalLanguageQuery String
+  sqlQuery            String
+  resultRowCount      Int
+  executionTime       Int       // milliseconds
+  success             Boolean
+  errorMessage        String?
+  insights            String?
+  createdAt           DateTime @default(now())
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection DatabaseConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  resource  String
+  resourceId String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
