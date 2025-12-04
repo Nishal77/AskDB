@@ -21,67 +21,64 @@ export interface ParsedConnectionString {
  * - NeonDB: postgresql:// (with special handling)
  */
 export class ConnectionStringParser {
+  private static readonly POSTGRESQL_PREFIXES = ['postgresql://', 'postgres://'];
+  private static readonly MYSQL_PREFIXES = ['mysql://', 'mysql2://'];
+  private static readonly MONGODB_PREFIXES = ['mongodb://', 'mongodb+srv://'];
+  private static readonly DEFAULT_PORTS = {
+    postgresql: 5432,
+    mysql: 3306,
+    mongodb: 27017,
+  };
+
   static parse(connectionString: string): ParsedConnectionString {
-    if (!connectionString || !connectionString.trim()) {
+    if (!connectionString?.trim()) {
       throw new BadRequestException('Connection string is required');
     }
 
     const trimmed = connectionString.trim();
 
-    // Try PostgreSQL/Postgres format
-    if (trimmed.startsWith('postgresql://') || trimmed.startsWith('postgres://')) {
+    if (this.POSTGRESQL_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) {
       return this.parsePostgreSQL(trimmed);
     }
 
-    // Try MySQL format
-    if (trimmed.startsWith('mysql://') || trimmed.startsWith('mysql2://')) {
+    if (this.MYSQL_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) {
       return this.parseMySQL(trimmed);
     }
 
-    // Try MongoDB format
-    if (trimmed.startsWith('mongodb://') || trimmed.startsWith('mongodb+srv://')) {
+    if (this.MONGODB_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) {
       return this.parseMongoDB(trimmed);
     }
 
-    throw new BadRequestException(
-      'Unsupported connection string format. Supported formats: postgresql://, mysql://, mongodb://',
-    );
+    throw new BadRequestException('Unsupported connection string format');
   }
 
   private static parsePostgreSQL(connectionString: string): ParsedConnectionString {
     try {
       const url = new URL(connectionString);
       const host = url.hostname;
-      const port = url.port ? parseInt(url.port, 10) : 5432;
+      const port = url.port ? parseInt(url.port, 10) : this.DEFAULT_PORTS.postgresql;
       const database = url.pathname.slice(1) || url.searchParams.get('database') || '';
       const username = decodeURIComponent(url.username || '');
       const password = decodeURIComponent(url.password || '');
-      
-      // Check for SSL requirements in connection string
+
       const sslMode = url.searchParams.get('sslmode');
       const sslParam = url.searchParams.get('ssl');
-      const ssl = sslMode === 'require' || 
-                  sslMode === 'prefer' ||
-                  sslParam === 'true' ||
-                  url.searchParams.has('sslmode');
+      const requiresSSL =
+        sslMode === 'require' ||
+        sslMode === 'prefer' ||
+        sslParam === 'true' ||
+        host.includes('supabase.co') ||
+        host.includes('neon.tech') ||
+        host.includes('neon');
 
-      // Detect Supabase (supabase.co domain)
-      // Detect NeonDB (neon.tech domain or neon database)
-      const isSupabase = host.includes('supabase.co');
-      const isNeon = host.includes('neon.tech') || host.includes('neon');
-      
-      console.log(`🔍 Parsing connection string - SSL mode: ${sslMode}, SSL required: ${ssl}, Is Neon: ${isNeon}`);
-
-      // Additional params
-      const additionalParams: Record<string, string> = {};
-      url.searchParams.forEach((value, key) => {
-        if (!['sslmode', 'ssl', 'database'].includes(key)) {
-          additionalParams[key] = value;
-        }
-      });
+      const additionalParams = this.extractAdditionalParams(url.searchParams, [
+        'sslmode',
+        'ssl',
+        'database',
+      ]);
 
       if (!host || !database || !username) {
-        throw new BadRequestException('Invalid PostgreSQL connection string: missing required fields');
+        throw new BadRequestException('Invalid PostgreSQL connection string');
       }
 
       return {
@@ -91,14 +88,14 @@ export class ConnectionStringParser {
         database,
         username,
         password,
-        ssl: ssl || isSupabase || isNeon, // Supabase and NeonDB require SSL
+        ssl: requiresSSL,
         additionalParams,
       };
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Invalid PostgreSQL connection string: ${error.message}`);
+      throw new BadRequestException('Invalid PostgreSQL connection string');
     }
   }
 
@@ -106,21 +103,16 @@ export class ConnectionStringParser {
     try {
       const url = new URL(connectionString);
       const host = url.hostname;
-      const port = url.port ? parseInt(url.port, 10) : 3306;
+      const port = url.port ? parseInt(url.port, 10) : this.DEFAULT_PORTS.mysql;
       const database = url.pathname.slice(1) || url.searchParams.get('database') || '';
       const username = decodeURIComponent(url.username || '');
       const password = decodeURIComponent(url.password || '');
       const ssl = url.searchParams.get('ssl') === 'true';
 
-      const additionalParams: Record<string, string> = {};
-      url.searchParams.forEach((value, key) => {
-        if (!['ssl', 'database'].includes(key)) {
-          additionalParams[key] = value;
-        }
-      });
+      const additionalParams = this.extractAdditionalParams(url.searchParams, ['ssl', 'database']);
 
       if (!host || !database || !username) {
-        throw new BadRequestException('Invalid MySQL connection string: missing required fields');
+        throw new BadRequestException('Invalid MySQL connection string');
       }
 
       return {
@@ -133,11 +125,11 @@ export class ConnectionStringParser {
         ssl,
         additionalParams,
       };
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Invalid MySQL connection string: ${error.message}`);
+      throw new BadRequestException('Invalid MySQL connection string');
     }
   }
 
@@ -145,21 +137,17 @@ export class ConnectionStringParser {
     try {
       const url = new URL(connectionString);
       const host = url.hostname;
-      const port = url.port ? parseInt(url.port, 10) : (connectionString.includes('mongodb+srv://') ? 27017 : 27017);
+      const port = url.port ? parseInt(url.port, 10) : this.DEFAULT_PORTS.mongodb;
       const database = url.pathname.slice(1) || url.searchParams.get('database') || '';
       const username = decodeURIComponent(url.username || '');
       const password = decodeURIComponent(url.password || '');
-      const ssl = connectionString.includes('mongodb+srv://') || url.searchParams.get('ssl') === 'true';
+      const ssl =
+        connectionString.includes('mongodb+srv://') || url.searchParams.get('ssl') === 'true';
 
-      const additionalParams: Record<string, string> = {};
-      url.searchParams.forEach((value, key) => {
-        if (!['ssl', 'database'].includes(key)) {
-          additionalParams[key] = value;
-        }
-      });
+      const additionalParams = this.extractAdditionalParams(url.searchParams, ['ssl', 'database']);
 
       if (!host || !database) {
-        throw new BadRequestException('Invalid MongoDB connection string: missing required fields');
+        throw new BadRequestException('Invalid MongoDB connection string');
       }
 
       return {
@@ -167,40 +155,49 @@ export class ConnectionStringParser {
         host,
         port,
         database,
-        username: username || '', // MongoDB can work without username/password
+        username: username || '',
         password: password || '',
         ssl,
         additionalParams,
       };
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException(`Invalid MongoDB connection string: ${error.message}`);
+      throw new BadRequestException('Invalid MongoDB connection string');
     }
   }
 
-  /**
-   * Detects the database type from connection string without parsing fully
-   */
+  private static extractAdditionalParams(
+    searchParams: URLSearchParams,
+    excludeKeys: string[],
+  ): Record<string, string> {
+    const params: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      if (!excludeKeys.includes(key)) {
+        params[key] = value;
+      }
+    });
+    return params;
+  }
+
   static detectType(connectionString: string): 'postgresql' | 'mysql' | 'mongodb' | null {
-    if (!connectionString || !connectionString.trim()) {
+    if (!connectionString?.trim()) {
       return null;
     }
 
     const trimmed = connectionString.trim().toLowerCase();
 
-    if (trimmed.startsWith('postgresql://') || trimmed.startsWith('postgres://')) {
+    if (this.POSTGRESQL_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) {
       return 'postgresql';
     }
-    if (trimmed.startsWith('mysql://') || trimmed.startsWith('mysql2://')) {
+    if (this.MYSQL_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) {
       return 'mysql';
     }
-    if (trimmed.startsWith('mongodb://') || trimmed.startsWith('mongodb+srv://')) {
+    if (this.MONGODB_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) {
       return 'mongodb';
     }
 
     return null;
   }
 }
-

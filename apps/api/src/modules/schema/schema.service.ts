@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../db/prisma.service';
 import { Pool } from 'pg';
 
@@ -14,7 +14,7 @@ export interface ColumnMetadata {
   columnName: string;
   dataType: string;
   isNullable: boolean;
-  defaultValue: any;
+  defaultValue: unknown;
   characterMaximumLength?: number;
 }
 
@@ -30,155 +30,100 @@ export interface IndexMetadata {
   isUnique: boolean;
 }
 
+export interface TableWithRowCount {
+  tableName: string;
+  rowCount: number;
+}
+
+const SSL_REQUIRED_HOSTS = [
+  'neon.tech',
+  'supabase.co',
+  'aws.',
+  'cloud.',
+  'amazonaws.com',
+  'pooler.',
+] as const;
+
+const CONNECTION_TIMEOUT_MS = 10000;
+const ERROR_ROW_COUNT = -1;
+
 @Injectable()
 export class SchemaService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getDatabaseMetadata(connectionId: string): Promise<TableMetadata[]> {
-    // Get connection details from database
-    const connection = await this.prisma.databaseConnection.findUnique({
-      where: { id: connectionId },
-    });
-
-    if (!connection) {
-      throw new Error('Connection not found');
-    }
-
-    // Determine if SSL is required based on host
-    const requiresSsl = connection.host.includes('neon.tech') || 
-                        connection.host.includes('supabase.co') ||
-                        connection.host.includes('aws.') ||
-                        connection.host.includes('cloud.') ||
-                        connection.host.includes('amazonaws.com') ||
-                        connection.host.includes('pooler.');
-
-    console.log(`🔍 Fetching database metadata for connection: ${connection.name}`);
-
-    // Connect to the user's database
-    const userPool = new Pool({
-      host: connection.host,
-      port: connection.port,
-      database: connection.database,
-      user: connection.username,
-      password: connection.password,
-      ssl: requiresSsl ? { rejectUnauthorized: false } : false,
-      connectionTimeoutMillis: 10000, // 10 second timeout
-    });
+    const connection = await this.getConnection(connectionId);
+    const pool = this.createPool(connection);
 
     try {
-      // Test connection first
-      await userPool.query('SELECT 1');
-      
-      const tables = await this.getTables(userPool);
-      const metadata: TableMetadata[] = [];
-
-      for (const tableName of tables) {
-        try {
-          const columns = await this.getColumns(userPool, tableName);
-          const primaryKeys = await this.getPrimaryKeys(userPool, tableName);
-          const foreignKeys = await this.getForeignKeys(userPool, tableName);
-          const indexes = await this.getIndexes(userPool, tableName);
-
-          metadata.push({
-            tableName,
-            columns,
-            primaryKeys,
-            foreignKeys,
-            indexes,
-          });
-        } catch (error: any) {
-          console.error(`Error fetching metadata for table "${tableName}":`, error.message);
-          // Continue with other tables even if one fails
-        }
-      }
-
-      return metadata;
-    } catch (error: any) {
-      console.error('❌ Error fetching database metadata:', error);
-      throw new Error(`Failed to fetch database metadata: ${error.message}`);
+      await this.testConnection(pool);
+      const tables = await this.getTables(pool);
+      return await this.buildMetadata(pool, tables);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(`Failed to fetch database metadata: ${message}`);
     } finally {
-      await userPool.end();
+      await pool.end();
     }
   }
 
-  async getTablesWithRowCounts(connectionId: string): Promise<Array<{ tableName: string; rowCount: number }>> {
-    // Get connection details from database
+  async getTablesWithRowCounts(connectionId: string): Promise<TableWithRowCount[]> {
+    const connection = await this.getConnection(connectionId);
+    const pool = this.createPool(connection);
+
+    try {
+      await this.testConnection(pool);
+      const tables = await this.getTables(pool);
+      return await this.getRowCounts(pool, tables);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(`Failed to fetch tables: ${message}`);
+    } finally {
+      await pool.end();
+    }
+  }
+
+  private async getConnection(connectionId: string) {
     const connection = await this.prisma.databaseConnection.findUnique({
       where: { id: connectionId },
     });
 
     if (!connection) {
-      throw new Error('Connection not found');
+      throw new BadRequestException('Connection not found');
     }
 
-    // Determine if SSL is required based on host
-    const requiresSsl = connection.host.includes('neon.tech') || 
-                        connection.host.includes('supabase.co') ||
-                        connection.host.includes('aws.') ||
-                        connection.host.includes('cloud.') ||
-                        connection.host.includes('amazonaws.com') ||
-                        connection.host.includes('pooler.');
+    return connection;
+  }
 
-    console.log(`🔍 Fetching tables for connection: ${connection.name}`);
-    console.log(`   Host: ${connection.host}:${connection.port}`);
-    console.log(`   Database: ${connection.database}`);
-    console.log(`   SSL Required: ${requiresSsl}`);
+  private determineSslRequirement(host: string): boolean {
+    return SSL_REQUIRED_HOSTS.some((requiredHost) => host.includes(requiredHost));
+  }
 
-    // Connect to the user's database
-    const userPool = new Pool({
+  private createPool(connection: {
+    host: string;
+    port: number;
+    database: string;
+    username: string;
+    password: string;
+  }): Pool {
+    const requiresSsl = this.determineSslRequirement(connection.host);
+
+    return new Pool({
       host: connection.host,
       port: connection.port,
       database: connection.database,
       user: connection.username,
       password: connection.password,
       ssl: requiresSsl ? { rejectUnauthorized: false } : false,
-      connectionTimeoutMillis: 10000, // 10 second timeout
+      connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
     });
+  }
 
-    try {
-      // Test connection first
-      await userPool.query('SELECT 1');
-      console.log('✅ Database connection successful');
-
-      const tables = await this.getTables(userPool);
-      console.log(`📊 Found ${tables.length} tables:`, tables);
-
-      const tablesWithCounts: Array<{ tableName: string; rowCount: number }> = [];
-
-      for (const table of tables) {
-        try {
-          // Use proper identifier quoting for table names to handle special characters
-          const result = await userPool.query(`SELECT COUNT(*) as count FROM ${this.quoteIdentifier(table)}`);
-          const rowCount = parseInt(result.rows[0].count, 10);
-          tablesWithCounts.push({
-            tableName: table,
-            rowCount,
-          });
-          console.log(`   ✓ ${table}: ${rowCount} rows`);
-        } catch (error: any) {
-          console.error(`   ✗ Error counting rows for table "${table}":`, error.message);
-          // If counting fails (e.g., permission issue), set to -1 but still include the table
-          tablesWithCounts.push({
-            tableName: table,
-            rowCount: -1,
-          });
-        }
-      }
-
-      console.log(`✅ Returning ${tablesWithCounts.length} tables with row counts`);
-      return tablesWithCounts;
-    } catch (error: any) {
-      console.error('❌ Error fetching tables:', error);
-      throw new Error(`Failed to fetch tables: ${error.message}`);
-    } finally {
-      await userPool.end();
-    }
+  private async testConnection(pool: Pool): Promise<void> {
+    await pool.query('SELECT 1');
   }
 
   private async getTables(pool: Pool): Promise<string[]> {
-    try {
-      // Get only user-created tables, exclude system tables
-      // Note: We exclude pg_* tables but allow user tables that might start with underscore
       const result = await pool.query(`
         SELECT table_name 
         FROM information_schema.tables 
@@ -189,20 +134,55 @@ export class SchemaService {
         ORDER BY table_name;
       `);
       
-      const tables = result.rows.map((row) => row.table_name);
-      console.log(`📋 Query returned ${tables.length} tables from information_schema`);
-      return tables;
-    } catch (error: any) {
-      console.error('❌ Error querying information_schema.tables:', error);
-      throw new Error(`Failed to query tables: ${error.message}`);
-    }
+    return result.rows.map((row) => row.table_name);
   }
 
-  /**
-   * Properly quote PostgreSQL identifiers to handle special characters
-   */
+  private async buildMetadata(pool: Pool, tables: string[]): Promise<TableMetadata[]> {
+    const metadata: TableMetadata[] = [];
+
+    for (const tableName of tables) {
+      try {
+        const [columns, primaryKeys, foreignKeys, indexes] = await Promise.all([
+          this.getColumns(pool, tableName),
+          this.getPrimaryKeys(pool, tableName),
+          this.getForeignKeys(pool, tableName),
+          this.getIndexes(pool, tableName),
+        ]);
+
+        metadata.push({
+          tableName,
+          columns,
+          primaryKeys,
+          foreignKeys,
+          indexes,
+        });
+      } catch {
+        // Continue with other tables even if one fails
+      }
+    }
+
+    return metadata;
+  }
+
+  private async getRowCounts(pool: Pool, tables: string[]): Promise<TableWithRowCount[]> {
+    const tablesWithCounts: TableWithRowCount[] = [];
+
+    for (const table of tables) {
+      try {
+        const result = await pool.query(
+          `SELECT COUNT(*) as count FROM ${this.quoteIdentifier(table)}`,
+        );
+        const rowCount = parseInt(result.rows[0].count, 10);
+        tablesWithCounts.push({ tableName: table, rowCount });
+      } catch {
+        tablesWithCounts.push({ tableName: table, rowCount: ERROR_ROW_COUNT });
+      }
+    }
+
+    return tablesWithCounts;
+  }
+
   private quoteIdentifier(identifier: string): string {
-    // Replace double quotes with escaped double quotes and wrap in quotes
     return `"${identifier.replace(/"/g, '""')}"`;
   }
 
@@ -297,15 +277,11 @@ export class SchemaService {
     );
 
     return result.rows.map((row) => {
-      // Ensure column_names is always an array
-      // PostgreSQL array_agg returns an array, but handle edge cases
-      let columnNames: string[] = [];
-      if (Array.isArray(row.column_names)) {
-        columnNames = row.column_names;
-      } else if (row.column_names) {
-        // If it's a string representation of an array, parse it
-        columnNames = [row.column_names];
-      }
+      const columnNames = Array.isArray(row.column_names)
+        ? row.column_names
+        : row.column_names
+          ? [row.column_names]
+          : [];
 
       return {
         indexName: row.index_name,

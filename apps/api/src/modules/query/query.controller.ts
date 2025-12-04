@@ -6,6 +6,7 @@ import {
   Param,
   UseGuards,
   Query,
+  NotFoundException,
 } from '@nestjs/common';
 import { QueryService, ExecuteQueryDto } from './query.service';
 import { QueryHistoryService } from './query.history.service';
@@ -14,55 +15,42 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ApiResponse } from '../../common/utils/response.util';
 import { InsightsService } from '../insights/insights.service';
 import { PrismaService } from '../db/prisma.service';
+import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+
+const DEFAULT_HISTORY_LIMIT = 50;
 
 @Controller('query')
 @UseGuards(JwtAuthGuard)
 export class QueryController {
   constructor(
-    private queryService: QueryService,
-    private queryHistoryService: QueryHistoryService,
-    private insightsService: InsightsService,
-    private prisma: PrismaService,
+    private readonly queryService: QueryService,
+    private readonly queryHistoryService: QueryHistoryService,
+    private readonly insightsService: InsightsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Post('execute')
   async executeQuery(
     @Body() dto: ExecuteQueryDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     try {
-      // Get user's OpenRouter key if they have one
-      const userRecord = await this.prisma.user.findUnique({
-        where: { id: user.id },
-        select: { openRouterApiKey: true },
-      });
-
+      const userOpenRouterKey = await this.getUserOpenRouterKey(user.id);
       const result = await this.queryService.executeQuery(
         {
           ...dto,
           userId: user.id,
         },
-        userRecord?.openRouterApiKey,
+        userOpenRouterKey,
       );
 
-      // Generate insights
       const insights = await this.insightsService.generateInsights(
         result.rows,
         result.columns,
         dto.naturalLanguageQuery,
       );
 
-      // Save to history
-      await this.queryHistoryService.saveQuery({
-        userId: user.id,
-        connectionId: dto.connectionId,
-        naturalLanguageQuery: dto.naturalLanguageQuery,
-        sqlQuery: result.sql,
-        resultRowCount: result.rowCount,
-        executionTime: result.executionTime,
-        success: true,
-        insights,
-      });
+      await this.saveQueryHistory(user.id, dto, result, insights, true);
 
       return ApiResponse.success(
         {
@@ -71,42 +59,56 @@ export class QueryController {
         },
         'Query executed successfully',
       );
-    } catch (error: any) {
-      // Save failed query to history
-      await this.queryHistoryService.saveQuery({
-        userId: user.id,
-        connectionId: dto.connectionId,
-        naturalLanguageQuery: dto.naturalLanguageQuery,
-        sqlQuery: '',
-        resultRowCount: 0,
-        executionTime: 0,
-        success: false,
-        errorMessage: error.message,
-      });
-
+    } catch (error) {
+      await this.saveQueryHistory(user.id, dto, null, null, false, error);
       throw error;
     }
   }
 
   @Get('history')
   async getQueryHistory(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: number,
   ) {
-    const history = await this.queryHistoryService.getQueryHistory(
-      user.id,
-      limit ? parseInt(limit.toString(), 10) : 50,
-    );
+    const parsedLimit = limit ? parseInt(limit.toString(), 10) : DEFAULT_HISTORY_LIMIT;
+    const history = await this.queryHistoryService.getQueryHistory(user.id, parsedLimit);
     return ApiResponse.success(history, 'Query history retrieved');
   }
 
   @Get('history/:id')
-  async getQueryById(@Param('id') id: string, @CurrentUser() user: any) {
+  async getQueryById(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     const query = await this.queryHistoryService.getQueryById(id, user.id);
     if (!query) {
-      return ApiResponse.error('Query not found', 'Query not found');
+      throw new NotFoundException('Query not found');
     }
     return ApiResponse.success(query, 'Query retrieved');
   }
-}
 
+  private async getUserOpenRouterKey(userId: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    return (user as any)?.openRouterApiKey || null;
+  }
+
+  private async saveQueryHistory(
+    userId: string,
+    dto: ExecuteQueryDto,
+    result: { sql: string; rowCount: number; executionTime: number } | null,
+    insights: string | null,
+    success: boolean,
+    error?: unknown,
+  ): Promise<void> {
+    await this.queryHistoryService.saveQuery({
+      userId,
+      connectionId: dto.connectionId,
+      naturalLanguageQuery: dto.naturalLanguageQuery,
+      sqlQuery: result?.sql || '',
+      resultRowCount: result?.rowCount || 0,
+      executionTime: result?.executionTime || 0,
+      success,
+      insights: success ? insights : null,
+      errorMessage: success ? null : (error instanceof Error ? error.message : 'Unknown error'),
+    });
+  }
+}

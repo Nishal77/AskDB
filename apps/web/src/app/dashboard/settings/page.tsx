@@ -95,7 +95,7 @@ export default function SettingsPage() {
         <div className="flex items-center gap-3 mb-3">
           <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center">
             <Settings className="h-6 w-6 text-muted-foreground" />
-          </div>
+            </div>
           <div>
             <h1 className="text-4xl font-semibold tracking-tight text-foreground">
               Settings
@@ -105,7 +105,7 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
-      </div>
+        </div>
 
       {/* OpenRouter API Key Section */}
       <Card className="mb-6 border bg-card/50 backdrop-blur-sm">
@@ -117,89 +117,89 @@ export default function SettingsPage() {
             <div>
               <CardTitle className="text-2xl font-semibold">OpenRouter API Key</CardTitle>
               <CardDescription className="mt-1 text-base">
-                Add your OpenRouter API key to use your own credits for LLM queries. 
-                If not set, the system will use the default API key.
-              </CardDescription>
+              Add your OpenRouter API key to use your own credits for LLM queries. 
+              If not set, the system will use the default API key.
+            </CardDescription>
             </div>
           </div>
-        </CardHeader>
+          </CardHeader>
         <CardContent className="space-y-6">
-          {success && (
+            {success && (
             <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50 border border-muted">
               <CheckCircle2 className="h-5 w-5 text-foreground flex-shrink-0" />
               <p className="text-sm font-medium text-foreground">{success}</p>
-            </div>
-          )}
-          {error && (
+              </div>
+            )}
+            {error && (
             <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20">
               <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
               <p className="text-sm font-medium text-destructive">{error}</p>
-            </div>
-          )}
+              </div>
+            )}
 
-          {hasOpenRouterKey && (
+            {hasOpenRouterKey && (
             <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-muted">
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="h-5 w-5 text-foreground" />
                 <div>
                   <p className="text-sm font-semibold text-foreground">
                     OpenRouter API key is configured
-                  </p>
+                </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Your API key is securely stored
                   </p>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDeleteOpenRouterKey}
-                disabled={saving}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDeleteOpenRouterKey}
+                  disabled={saving}
                 className="gap-2"
-              >
-                Remove Key
-              </Button>
-            </div>
-          )}
+                >
+                  Remove Key
+                </Button>
+              </div>
+            )}
 
           <form onSubmit={handleSaveOpenRouterKey} className="space-y-5">
-            <div className="space-y-2">
+              <div className="space-y-2">
               <label htmlFor="openRouterKey" className="text-sm font-semibold text-foreground">
-                OpenRouter API Key
-              </label>
-              <Input
-                id="openRouterKey"
-                type="password"
-                placeholder="sk-or-v1-..."
-                value={openRouterKey}
-                onChange={(e) => setOpenRouterKey(e.target.value)}
-                disabled={saving}
+                  OpenRouter API Key
+                </label>
+                <Input
+                  id="openRouterKey"
+                  type="password"
+                  placeholder="sk-or-v1-..."
+                  value={openRouterKey}
+                  onChange={(e) => setOpenRouterKey(e.target.value)}
+                  disabled={saving}
                 className="h-11 border"
-              />
+                />
               <p className="text-xs text-muted-foreground flex items-center gap-1">
-                Get your API key from{' '}
-                <a
-                  href="https://openrouter.ai/keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  Get your API key from{' '}
+                  <a
+                    href="https://openrouter.ai/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   className="text-foreground hover:underline font-medium inline-flex items-center gap-1"
-                >
-                  openrouter.ai/keys
+                  >
+                    openrouter.ai/keys
                   <ExternalLink className="h-3 w-3" />
-                </a>
-              </p>
-            </div>
+                  </a>
+                </p>
+              </div>
             <Button 
               type="submit" 
               disabled={saving || !openRouterKey.trim()}
               size="lg"
               className="gap-2"
             >
-              {saving ? 'Saving...' : hasOpenRouterKey ? 'Update Key' : 'Save Key'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+                {saving ? 'Saving...' : hasOpenRouterKey ? 'Update Key' : 'Save Key'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
       {/* Account Information Section */}
       <Card className="border-2 bg-card/50 backdrop-blur-sm">
@@ -215,8 +215,8 @@ export default function SettingsPage() {
               </CardDescription>
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
+          </CardHeader>
+          <CardContent>
           <div className="space-y-6">
             <div className="space-y-2">
               <div className="flex items-center gap-2 mb-1">
@@ -239,11 +239,11 @@ export default function SettingsPage() {
                   <span className="text-muted-foreground italic">Not set</span>
                 )}
               </p>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-    </main>
+          </CardContent>
+        </Card>
+      </main>
   );
 }
 

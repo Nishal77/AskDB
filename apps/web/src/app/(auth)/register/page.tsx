@@ -70,7 +70,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex items-center justify-center px-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Create Account</CardTitle>
@@ -88,7 +88,7 @@ export default function RegisterPage() {
               <Input
                 id="name"
                 type="text"
-                placeholder="John Doe"
+                placeholder="Your Name"
                 value={formData.name ?? ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value || '' })}
                 required
@@ -114,7 +114,7 @@ export default function RegisterPage() {
               <Input
                 id="phone"
                 type="tel"
-                placeholder="+1 (555) 123-4567"
+                placeholder="+9876543210"
                 value={formData.phone ?? ''}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value || '' })}
               />

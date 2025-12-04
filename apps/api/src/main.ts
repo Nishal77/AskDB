@@ -1,53 +1,83 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, BadRequestException } from '@nestjs/common';
+import { ValidationPipe, BadRequestException, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { getEnvConfig } from './config/env';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
+const logger = new Logger('Bootstrap');
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const config = getEnvConfig();
+  try {
+    // Validate environment configuration before creating app
+    const config = getEnvConfig();
+    logger.log(`Starting ${config.appName} v${config.appVersion}`);
 
-  // Enable CORS
-  app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3001',
-    credentials: true,
-  });
+    const app = await NestFactory.create(AppModule, {
+      logger: ['error', 'warn', 'log'],
+    });
 
-  // Global exception filter
-  app.useGlobalFilters(new HttpExceptionFilter());
-
-  // Global validation pipe with better error handling
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: false, // Changed to false to be more lenient
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
+    // CORS configuration
+    const allowedOrigins = process.env.FRONTEND_URL
+      ? process.env.FRONTEND_URL.split(',').map((url) => url.trim())
+      : ['http://localhost:3001', 'http://localhost:3000'];
+    
+    app.enableCors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, Postman, etc.)
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        if (allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          logger.warn(`CORS blocked origin: ${origin}`);
+          callback(new Error('Not allowed by CORS'));
+        }
       },
-      skipMissingProperties: true, // Skip missing properties to prevent validation on undefined
-      skipNullProperties: true, // Skip null properties
-      skipUndefinedProperties: true, // Skip undefined to prevent toUpperCase errors
-      stopAtFirstError: true, // Stop on first error to prevent cascading validation issues
-      exceptionFactory: (errors) => {
-        const messages = errors.map((error) => {
-          const constraints = error.constraints || {};
-          return Object.values(constraints).join(', ');
-        });
-        return new BadRequestException(messages.join('; '));
-      },
-    }),
-  );
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      exposedHeaders: ['Authorization'],
+    });
 
-  // Global prefix - exclude health and root
-  app.setGlobalPrefix('api/v1', {
-    exclude: ['/health'],
-  });
+    // Global exception handling
+    app.useGlobalFilters(new HttpExceptionFilter());
 
-  await app.listen(config.port);
-  console.log(`🚀 ${config.appName} API is running on: http://localhost:${config.port}/api/v1`);
+    // Request validation and transformation
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: false,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+        skipMissingProperties: true,
+        skipNullProperties: true,
+        skipUndefinedProperties: true,
+        stopAtFirstError: true,
+        exceptionFactory: (errors) => {
+          const messages = errors.map((error) => {
+            const constraints = error.constraints || {};
+            return Object.values(constraints).join(', ');
+          });
+          return new BadRequestException(messages.join('; '));
+        },
+      }),
+    );
+
+    // API prefix (health check excluded)
+    app.setGlobalPrefix('api/v1', {
+      exclude: ['/health'],
+    });
+
+    await app.listen(config.port);
+    logger.log(`API running on http://localhost:${config.port}/api/v1`);
+  } catch (error) {
+    logger.error('Failed to start application', error instanceof Error ? error.stack : error);
+    process.exit(1);
+  }
 }
 
 bootstrap();
-

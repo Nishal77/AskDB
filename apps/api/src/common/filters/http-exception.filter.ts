@@ -16,7 +16,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
-    let errors: any = null;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -26,56 +25,45 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = exceptionResponse;
       } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const responseObj = exceptionResponse as any;
-        message = responseObj.message || message;
-        errors = responseObj.message instanceof Array ? responseObj.message : null;
+        const errorMessage = responseObj.message;
+        message = Array.isArray(errorMessage)
+          ? errorMessage.join(', ')
+          : errorMessage || message;
       }
     } else if (exception instanceof Error) {
-      // Handle specific error types
-      if (exception instanceof TypeError) {
-        // Common validation errors like "Cannot read properties of undefined (reading 'toUpperCase')"
-        if (exception.message.includes('toUpperCase') || exception.message.includes('Cannot read properties')) {
-          status = HttpStatus.BAD_REQUEST;
-          message = 'Invalid input data. Please check all required fields are provided correctly.';
-        } else {
-          message = exception.message;
-        }
-      } else {
-        message = exception.message;
-        
-        // Handle Prisma/database errors
-        if (message.includes('does not exist') || message.includes('P1001') || message.includes('P2002')) {
-          status = HttpStatus.BAD_REQUEST;
-          if (message.includes('does not exist') || message.includes('42P01')) {
-            message = 'Database schema not initialized. Please run migrations: pnpm migrate';
-          } else if (message.includes('P1001')) {
-            message = 'Cannot connect to database. Please check your DATABASE_URL configuration.';
-          } else if (message.includes('P2002')) {
-            message = 'A record with this value already exists.';
-          }
-        }
+      message = exception.message;
+      // Handle CORS errors
+      if (message.includes('CORS')) {
+        status = HttpStatus.FORBIDDEN;
       }
     }
 
-    // Log error for debugging
-    console.error('Exception caught:', {
-      status,
-      message,
-      errors,
-      path: request.url,
-      method: request.method,
-      body: request.body,
-      errorType: exception instanceof Error ? exception.constructor.name : typeof exception,
-      stack: exception instanceof Error ? exception.stack : undefined,
-    });
+    // Log error for debugging (production should use proper logger)
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      console.error('Internal Server Error:', {
+        status,
+        message,
+        path: request.url,
+        method: request.method,
+        stack: exception instanceof Error ? exception.stack : undefined,
+      });
+    }
 
-    response.status(status).json({
+    const errorResponse = {
       success: false,
-      error: Array.isArray(errors) ? errors.join(', ') : message,
-      message: Array.isArray(errors) ? errors.join(', ') : message,
-      statusCode: status,
-      timestamp: new Date().toISOString(),
-      path: request.url,
-    });
+      error: message,
+      message: message,
+      ...(process.env.NODE_ENV === 'development' && {
+        stack: exception instanceof Error ? exception.stack : undefined,
+        path: request.url,
+        method: request.method,
+      }),
+    };
+
+    // Ensure response is sent even if headers are already sent
+    if (!response.headersSent) {
+      response.status(status).json(errorResponse);
+    }
   }
 }
 

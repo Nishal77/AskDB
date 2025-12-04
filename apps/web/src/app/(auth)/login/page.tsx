@@ -56,14 +56,14 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4 py-12">
+    <div className="min-h-screen flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome back</h1>
           <p className="text-muted-foreground">Sign in to your account to continue</p>
         </div>
 
-        <Card className="shadow-lg">
+        <Card className="">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-2xl">Login</CardTitle>
             <CardDescription>Enter your email and password to access your account</CardDescription>

@@ -14,12 +14,19 @@ import { DbModule } from '../db/db.module';
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET') || 'your-secret-key',
+      useFactory: (configService: ConfigService) => {
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error('JWT_SECRET is not configured');
+        }
+
+        return {
+          secret,
         signOptions: {
           expiresIn: configService.get<string>('JWT_EXPIRES_IN') || '7d',
         },
-      }),
+        };
+      },
       inject: [ConfigService],
     }),
   ],
@@ -28,4 +35,3 @@ import { DbModule } from '../db/db.module';
   exports: [AuthService],
 })
 export class AuthModule {}
-

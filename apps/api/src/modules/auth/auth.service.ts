@@ -5,97 +5,79 @@ import { PrismaService } from '../db/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
+export interface UserWithoutPassword {
+  id: string;
+  email: string;
+  name: string | null;
+  phone: string | null;
+  openRouterApiKey: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    openRouterApiKey: string | null;
+  };
+}
+
+const MIN_PASSWORD_LENGTH = 6;
+const BCRYPT_ROUNDS = 10;
+const MASKED_API_KEY = '***configured***';
+
 @Injectable()
 export class AuthService {
   constructor(
-    private prisma: PrismaService,
-    private jwtService: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
   ) {}
 
-  async validateUser(email: string, password: string): Promise<any> {
+  async validateUser(email: string, password: string): Promise<UserWithoutPassword | null> {
     try {
       const user = await this.prisma.user.findUnique({
         where: { email },
       });
 
-      // Check if user exists and has a password (not OAuth-only user)
       if (!user || !user.password) {
         return null;
       }
 
-      // Verify password
-      if (await compare(password, user.password)) {
-        const { password: _, ...result } = user;
-        return result;
-      }
+      const isValidPassword = await compare(password, user.password);
+      if (!isValidPassword) {
       return null;
-    } catch (error: any) {
-      console.error('Error validating user:', error);
-      // Check if it's a database schema error
-      if (error.message?.includes('does not exist') || error.code === '42P01') {
-        throw new BadRequestException(
-          'Database schema not initialized. Please contact administrator or run migrations.'
-        );
       }
+
+      const { password: _, ...result } = user;
+      return {
+        id: result.id,
+        email: result.email,
+        name: result.name,
+        phone: result.phone,
+        openRouterApiKey: (result as any).openRouterApiKey || null,
+        createdAt: result.createdAt,
+        updatedAt: result.updatedAt,
+      };
+    } catch (error) {
+      this.handlePrismaError(error);
       return null;
     }
   }
 
-  async login(loginDto: LoginDto, ipAddress?: string, userAgent?: string) {
+  async login(loginDto: LoginDto, ipAddress?: string, userAgent?: string): Promise<LoginResponse> {
     const normalizedEmail = loginDto.email.trim().toLowerCase();
-    let failureReason: string | null = null;
-
-    try {
       const user = await this.validateUser(normalizedEmail, loginDto.password);
+
       if (!user) {
-        failureReason = 'Invalid credentials';
-        // Log failed login attempt
-        try {
-          const existingUser = await this.prisma.user.findUnique({
-            where: { email: normalizedEmail },
-          });
-          if (existingUser) {
-            await this.prisma.loginHistory.create({
-              data: {
-                userId: existingUser.id,
-                email: normalizedEmail,
-                success: false,
-                ipAddress: ipAddress || null,
-                userAgent: userAgent || null,
-                failureReason: failureReason,
-              },
-            });
-          } else {
-            // User doesn't exist - log with a placeholder userId (we'll handle this differently)
-            // For now, we'll skip logging non-existent users
-          }
-        } catch (logError) {
-          console.error('Failed to log login attempt:', logError);
-        }
+      await this.logFailedLogin(normalizedEmail, ipAddress, userAgent);
         throw new UnauthorizedException('Invalid credentials');
       }
 
-      // Update last login time
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      });
-
-      // Log successful login
-      try {
-        await this.prisma.loginHistory.create({
-          data: {
-            userId: user.id,
-            email: user.email,
-            success: true,
-            ipAddress: ipAddress || null,
-            userAgent: userAgent || null,
-          },
-        });
-      } catch (logError) {
-        console.error('Failed to log successful login:', logError);
-        // Don't fail the login if logging fails
-      }
+    await this.updateLastLogin(user.id);
+    await this.logSuccessfulLogin(user.id, user.email, ipAddress, userAgent);
 
       const payload = { email: user.email, sub: user.id };
       return {
@@ -104,22 +86,97 @@ export class AuthService {
           id: user.id,
           email: user.email,
           name: user.name,
-          openRouterApiKey: user.openRouterApiKey ? '***configured***' : null, // Don't expose full key
-        },
-      };
-    } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
-      }
-      console.error('Login error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new UnauthorizedException('Login failed: ' + errorMessage);
+        openRouterApiKey: this.maskApiKey(user.openRouterApiKey),
+      },
+    };
+  }
+
+  async register(registerDto: RegisterDto): Promise<UserWithoutPassword> {
+    const { name, email, password, phone } = this.validateRegistrationInput(registerDto);
+    const normalizedEmail = email.toLowerCase();
+
+    await this.checkUserExists(normalizedEmail);
+
+    const hashedPassword = await hash(password, BCRYPT_ROUNDS);
+    const user = await this.prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        password: hashedPassword,
+        name,
+        phone,
+        provider: 'email',
+      },
+    });
+
+    const { password: _, ...result } = user;
+    return {
+      id: result.id,
+      email: result.email,
+      name: result.name,
+      phone: result.phone,
+      openRouterApiKey: (result as any).openRouterApiKey || null,
+      createdAt: result.createdAt,
+      updatedAt: result.updatedAt,
+    };
+  }
+
+  async validateToken(token: string): Promise<unknown> {
+    try {
+      return this.jwtService.verify(token);
+    } catch {
+      throw new UnauthorizedException('Invalid token');
     }
   }
 
-  async register(registerDto: RegisterDto) {
+  async getUserById(userId: string): Promise<UserWithoutPassword> {
     try {
-      // Validate and sanitize input - ensure all required fields are present and not empty
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        openRouterApiKey: this.maskApiKey((user as any).openRouterApiKey),
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.handlePrismaError(error);
+      throw error;
+    }
+  }
+
+  async updateOpenRouterKey(
+    userId: string,
+    openRouterApiKey: string | null,
+  ): Promise<UserWithoutPassword> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { openRouterApiKey: openRouterApiKey?.trim() || null } as any,
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      phone: user.phone,
+      openRouterApiKey: this.maskApiKey((user as any).openRouterApiKey),
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+  }
+
+  private validateRegistrationInput(registerDto: RegisterDto) {
       const name = registerDto.name?.trim();
       const email = registerDto.email?.trim();
       const password = registerDto.password?.trim();
@@ -134,130 +191,112 @@ export class AuthService {
       if (!password || password.length === 0) {
         throw new BadRequestException('Password is required');
       }
-      if (password.length < 6) {
-        throw new BadRequestException('Password must be at least 6 characters long');
-      }
-
-      // Normalize email to lowercase (name can have any case)
-      const normalizedEmail = email.toLowerCase();
-
-      // Check if user already exists
-      let existingUser;
-      try {
-        existingUser = await this.prisma.user.findUnique({
-          where: { email: normalizedEmail },
-        });
-      } catch (error: any) {
-        // Check if it's a database schema error
-        if (error.message?.includes('does not exist') || error.code === '42P01') {
+    if (password.length < MIN_PASSWORD_LENGTH) {
           throw new BadRequestException(
-            'Database schema not initialized. Please run migrations: pnpm migrate'
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`,
           );
         }
-        throw error;
+
+    return { name, email, password, phone };
       }
+
+  private async checkUserExists(email: string): Promise<void> {
+    try {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+      });
 
       if (existingUser) {
         throw new BadRequestException('User with this email already exists');
       }
-
-      const hashedPassword = await hash(password, 10);
-
-      const user = await this.prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          password: hashedPassword,
-          name: name, // Keep name as-is (can have capital letters)
-          phone: phone,
-          provider: 'email', // Mark as email-based registration
-        },
-      });
-
-      const { password: _, ...result } = user;
-      return result;
-    } catch (error: any) {
+    } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      
-      // Check if it's a database schema error
-      if (error.message?.includes('does not exist') || error.code === '42P01') {
-        throw new BadRequestException(
-          'Database schema not initialized. Please run migrations: pnpm migrate'
-        );
-      }
-      
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Registration error:', error);
-      throw new BadRequestException('Registration failed: ' + errorMessage);
-    }
-  }
-
-  async validateToken(token: string) {
-    try {
-      const payload = this.jwtService.verify(token);
-      return payload;
-    } catch {
-      throw new UnauthorizedException('Invalid token');
-    }
-  }
-
-  async getUserById(userId: string) {
-    let user;
-    try {
-      user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          phone: true,
-          openRouterApiKey: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-    } catch (error: any) {
-      // Check if it's a database schema error
-      if (error.message?.includes('does not exist') || error.code === '42P01') {
-        throw new BadRequestException(
-          'Database schema not initialized. Please run migrations: pnpm migrate'
-        );
-      }
+      this.handlePrismaError(error);
       throw error;
     }
-
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
-
-    // Don't expose full key, just indicate if it's set
-    return {
-      ...user,
-      openRouterApiKey: user.openRouterApiKey ? '***configured***' : null,
-    };
   }
 
-  async updateOpenRouterKey(userId: string, openRouterApiKey: string | null) {
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: { openRouterApiKey: openRouterApiKey?.trim() || null },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        phone: true,
-        openRouterApiKey: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+  private async updateLastLogin(userId: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lastLoginAt: new Date() } as any,
+      });
+    } catch {
+      // Silently fail - login tracking is not critical
+    }
+  }
 
-    // Don't expose full key in response
-    return {
-      ...user,
-      openRouterApiKey: user.openRouterApiKey ? '***configured***' : null,
-    };
+  private async logSuccessfulLogin(
+    userId: string,
+    email: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<void> {
+    try {
+      await (this.prisma as any).loginHistory.create({
+        data: {
+          userId,
+          email,
+          success: true,
+          ipAddress: ipAddress || null,
+          userAgent: userAgent || null,
+        },
+      });
+    } catch {
+      // Silently fail - login logging is not critical
+    }
+  }
+
+  private async logFailedLogin(
+    email: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<void> {
+    try {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingUser) {
+        await (this.prisma as any).loginHistory.create({
+          data: {
+            userId: existingUser.id,
+            email,
+            success: false,
+            ipAddress: ipAddress || null,
+            userAgent: userAgent || null,
+            failureReason: 'Invalid credentials',
+          },
+        });
+  }
+    } catch {
+      // Silently fail - login logging is not critical
+    }
+  }
+
+  private maskApiKey(apiKey: string | null): string | null {
+    return apiKey ? MASKED_API_KEY : null;
+  }
+
+  private handlePrismaError(error: unknown): void {
+    if (this.isPrismaSchemaError(error)) {
+      throw new BadRequestException(
+        'Database schema not initialized. Please run migrations: pnpm migrate',
+      );
+    }
+  }
+
+  private isPrismaSchemaError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    return (
+      error.message?.includes('does not exist') ||
+      (error as any).code === '42P01' ||
+      (error as any).code === 'P2021'
+    );
   }
 }
-

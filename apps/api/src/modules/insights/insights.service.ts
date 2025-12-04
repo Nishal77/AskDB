@@ -1,13 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../llm/llm.service';
 import { generateInsightsPrompt } from './insights.prompt';
 
 @Injectable()
 export class InsightsService {
-  constructor(private llmService: LlmService) {}
+  private readonly logger = new Logger(InsightsService.name);
+
+  constructor(private readonly llmService: LlmService) {}
 
   async generateInsights(
-    data: any[],
+    data: Record<string, unknown>[],
     columns: string[],
     originalQuery: string,
   ): Promise<string> {
@@ -18,12 +20,10 @@ export class InsightsService {
     const prompt = generateInsightsPrompt(data, columns, originalQuery);
 
     try {
-      const insights = await this.llmService.explainSQL(prompt);
-      return insights;
+      return await this.llmService.explainSQL(prompt);
     } catch (error) {
-      console.error('Error generating insights:', error);
+      this.logger.error('Failed to generate insights', error);
       return 'Unable to generate insights at this time.';
     }
   }
 }
-

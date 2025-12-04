@@ -8,68 +8,55 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleInit() {
     try {
       await this.$connect();
-      this.logger.log('✅ Successfully connected to database');
-      
-      // Validate that the database schema exists by checking if User table exists
+      this.logger.log('Database connected');
       await this.validateDatabaseSchema();
-    } catch (error: any) {
-      this.logger.error('❌ Failed to connect to database', error);
-      
-      // Provide helpful error message
-      if (error.message?.includes('does not exist')) {
-        this.logger.error(
-          '⚠️  Database tables do not exist. Please run migrations:\n' +
-          '  pnpm migrate\n' +
-          '  or\n' +
-          '  cd packages/prisma && pnpm prisma migrate deploy'
-        );
-      } else if (error.message?.includes('P1001') || error.message?.includes('connect')) {
-        this.logger.error(
-          '⚠️  Cannot connect to database. Please check:\n' +
-          '  1. DATABASE_URL is set correctly in .env\n' +
-          '  2. Database server is running\n' +
-          '  3. Network connectivity is available'
-        );
-      }
-      
-      // Re-throw to prevent app from starting with broken database
+    } catch (error) {
+      this.handleConnectionError(error);
       throw error;
     }
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
-    this.logger.log('Disconnected from database');
+    this.logger.log('Database disconnected');
   }
 
-  /**
-   * Validate that the database schema exists by attempting a simple query
-   */
   private async validateDatabaseSchema() {
     try {
-      // Try to query the User table to verify schema exists
-      // Using findFirst with a limit to avoid fetching data, just check if table exists
       await this.user.findFirst({ take: 0 });
-      this.logger.log('✅ Database schema validated');
-    } catch (error: any) {
-      // If table doesn't exist, provide helpful error
-      if (error.message?.includes('does not exist') || error.code === '42P01' || error.code === 'P2021') {
-        this.logger.error(
-          '❌ Database schema not found. Tables do not exist.\n' +
-          'Please run migrations:\n' +
-          '  pnpm db:setup\n' +
-          '  or\n' +
-          '  pnpm migrate\n' +
-          '  or\n' +
-          '  cd packages/prisma && pnpm prisma migrate deploy'
-        );
-        throw new Error(
-          'Database schema not initialized. Please run migrations: pnpm db:setup'
-        );
+      this.logger.log('Database schema validated');
+    } catch (error) {
+      if (this.isSchemaError(error)) {
+        this.logger.error('Database tables missing. Run migrations: pnpm migrate');
+        throw new Error('Database tables missing. Run migrations: pnpm migrate');
       }
-      // For other errors, just log and continue (might be permission issues)
-      this.logger.warn('⚠️  Could not validate schema, but connection is active');
+      this.logger.warn('Schema check failed, but database is connected');
     }
   }
-}
 
+  private handleConnectionError(error: unknown) {
+    if (!(error instanceof Error)) {
+      this.logger.error('Unable to connect to database');
+      return;
+    }
+
+    this.logger.error('Database connection failed', error);
+
+    if (error.message?.includes('does not exist')) {
+      this.logger.error('Database tables missing. Run migrations: pnpm migrate');
+    } else if (error.message?.includes('P1001') || error.message?.includes('connect')) {
+      this.logger.error('Check DATABASE_URL and ensure database server is running');
+    }
+  }
+
+  private isSchemaError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    return (
+      error.message?.includes('does not exist') ||
+      (error as any).code === '42P01' ||
+      (error as any).code === 'P2021'
+    );
+    }
+  }

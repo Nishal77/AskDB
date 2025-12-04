@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../db/prisma.service';
 
 export interface AuditLogDto {
@@ -6,14 +6,21 @@ export interface AuditLogDto {
   action: string;
   resource: string;
   resourceId?: string;
-  metadata?: any;
+  metadata?: unknown;
   ipAddress?: string;
   userAgent?: string;
 }
 
+interface PrismaError extends Error {
+  code?: string;
+}
+
 @Injectable()
 export class AuditService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(AuditService.name);
+  private readonly DEFAULT_LIMIT = 100;
+
+  constructor(private readonly prisma: PrismaService) {}
 
   async log(dto: AuditLogDto) {
     try {
@@ -23,24 +30,21 @@ export class AuditService {
           action: dto.action,
           resource: dto.resource,
           resourceId: dto.resourceId,
-          metadata: dto.metadata,
+          metadata: dto.metadata as any,
           ipAddress: dto.ipAddress,
           userAgent: dto.userAgent,
         },
       });
-    } catch (error: any) {
-      // Silently fail if database tables don't exist yet
-      // This allows the API to start before migrations are run
-      if (error?.code === 'P2021' || error?.code === '42P01') {
-        console.warn('AuditLog table does not exist yet. Run migrations: pnpm --filter @askdb/prisma migrate dev');
+    } catch (error) {
+      if (this.isSchemaError(error)) {
+        this.logger.warn('AuditLog table missing. Run migrations: pnpm migrate');
         return null;
       }
-      // Re-throw other errors
       throw error;
     }
   }
 
-  async getAuditLogs(userId?: string, limit: number = 100) {
+  async getAuditLogs(userId?: string, limit: number = this.DEFAULT_LIMIT) {
     try {
       const where = userId ? { userId } : {};
       return await this.prisma.auditLog.findMany({
@@ -48,14 +52,17 @@ export class AuditService {
         orderBy: { createdAt: 'desc' },
         take: limit,
       });
-    } catch (error: any) {
-      // Return empty array if tables don't exist
-      if (error?.code === 'P2021' || error?.code === '42P01') {
-        console.warn('AuditLog table does not exist yet. Run migrations: pnpm --filter @askdb/prisma migrate dev');
+    } catch (error) {
+      if (this.isSchemaError(error)) {
+        this.logger.warn('AuditLog table missing. Run migrations: pnpm migrate');
         return [];
       }
       throw error;
     }
   }
-}
 
+  private isSchemaError(error: unknown): boolean {
+    const prismaError = error as PrismaError;
+    return prismaError?.code === 'P2021' || prismaError?.code === '42P01';
+  }
+}

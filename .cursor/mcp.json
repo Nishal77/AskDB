@@ -3,7 +3,8 @@
       "Neon": {
         "url": "https://mcp.neon.tech/mcp",
         "headers": {
-          "Authorization": "napi_jbhz7s4t4u3d5t5bjqfrzg1xj0opgoaxb3tm52r0bybw80ebu41ff3r5jg7pyn5u"
+          "Authorization": "napi_248pq0ua5o2nvb7ojck3yygn20k8ydoe1txnwvv7n2tlmj1u09x4vriwz7o5pkcu"
+        //   "Authorization": "napi_jbhz7s4t4u3d5t5bjqfrzg1xj0opgoaxb3tm52r0bybw80ebu41ff3r5jg7pyn5u"
         }
       }
     }

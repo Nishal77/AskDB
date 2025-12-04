@@ -81,9 +81,9 @@ export default function ConnectionDetailsPage() {
           <CardContent className="pt-8 pb-6">
             <div className="text-center space-y-4">
               <p className="text-destructive font-medium">{error || 'Connection not found'}</p>
-              <Button onClick={() => router.push('/dashboard')} className="w-full">
-                Back to Dashboard
-              </Button>
+            <Button onClick={() => router.push('/dashboard')} className="w-full">
+              Back to Dashboard
+            </Button>
             </div>
           </CardContent>
         </Card>
@@ -132,7 +132,7 @@ export default function ConnectionDetailsPage() {
                     {connection.host}:{connection.port}
                   </span>
                 </div>
-              </div>
+            </div>
             </div>
             <p className="text-muted-foreground text-lg ml-16">
               Database: <span className="font-mono">{connection.database}</span>
@@ -156,22 +156,22 @@ export default function ConnectionDetailsPage() {
                 {tables.length === 0
                   ? 'No tables found'
                   : `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} available`}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {tables.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (selectedTables.size === tables.length) {
-                      setSelectedTables(new Set());
-                    } else {
-                      setSelectedTables(new Set(tables.map(t => t.tableName)));
-                    }
-                  }}
+          </p>
+        </div>
+              <div className="flex items-center gap-2">
+                {tables.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (selectedTables.size === tables.length) {
+                        setSelectedTables(new Set());
+                      } else {
+                        setSelectedTables(new Set(tables.map(t => t.tableName)));
+                      }
+                    }}
                   className="gap-2"
-                >
+                  >
                   {selectedTables.size === tables.length ? (
                     <>
                       <CheckSquare className="h-4 w-4" />
@@ -183,8 +183,8 @@ export default function ConnectionDetailsPage() {
                       Select All
                     </>
                   )}
-                </Button>
-              )}
+                  </Button>
+                )}
               <Button
                 variant="outline"
                 size="sm"
@@ -199,19 +199,19 @@ export default function ConnectionDetailsPage() {
                 )}
                 {refreshing ? 'Refreshing...' : 'Refresh'}
               </Button>
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {tables.length === 0 ? (
+          </CardHeader>
+          <CardContent>
+            {tables.length === 0 ? (
             <div className="text-center py-16">
               <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
                 <Database className="h-8 w-8 text-muted-foreground" />
               </div>
               <p className="text-muted-foreground mb-4 font-medium">No tables found in this database</p>
-              {error && (
+                {error && (
                 <p className="text-destructive text-sm mb-4">{error}</p>
-              )}
+                )}
               <Button onClick={loadTables} disabled={refreshing} variant="outline" className="gap-2">
                 {refreshing ? (
                   <Spinner className="h-4 w-4" />
@@ -220,8 +220,8 @@ export default function ConnectionDetailsPage() {
                 )}
                 {refreshing ? 'Refreshing...' : 'Try Again'}
               </Button>
-            </div>
-          ) : (
+              </div>
+            ) : (
             <div className="space-y-4">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -312,26 +312,26 @@ export default function ConnectionDetailsPage() {
                     <Database className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Total Rows:</span>
                     <span className="font-semibold text-foreground font-mono">
-                      {formatRowCount(
-                        tables.reduce((sum, t) => (t.rowCount > 0 ? sum + t.rowCount : sum), 0)
-                      )}
+                        {formatRowCount(
+                          tables.reduce((sum, t) => (t.rowCount > 0 ? sum + t.rowCount : sum), 0)
+                        )}
                     </span>
                   </div>
-                </div>
-                {selectedTables.size > 0 && (
+                  </div>
+                  {selectedTables.size > 0 && (
                   <div className="flex items-center gap-2 text-foreground">
                     <CheckSquare className="h-4 w-4" />
                     <span className="font-semibold">
                       {selectedTables.size} {selectedTables.size === 1 ? 'table' : 'tables'} selected
                     </span>
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </main>
+            )}
+          </CardContent>
+        </Card>
+      </main>
   );
 }
 
