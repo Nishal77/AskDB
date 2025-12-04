@@ -16,6 +16,7 @@ export interface CreateConnectionDto {
   name: string;
   connectionString?: string; // Connection string/URL
   anonKey?: string; // Anon key (for Supabase and similar services)
+  accessMode?: 'read' | 'write' | 'update' | 'full'; // Access mode for the connection
   // Legacy fields (for backward compatibility)
   host?: string;
   port?: number;
@@ -97,6 +98,7 @@ export interface User {
   id: string;
   email: string;
   name: string | null;
+  openRouterApiKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }

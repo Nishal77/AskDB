@@ -41,6 +41,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
         }
       } else {
         message = exception.message;
+        
+        // Handle Prisma/database errors
+        if (message.includes('does not exist') || message.includes('P1001') || message.includes('P2002')) {
+          status = HttpStatus.BAD_REQUEST;
+          if (message.includes('does not exist') || message.includes('42P01')) {
+            message = 'Database schema not initialized. Please run migrations: pnpm migrate';
+          } else if (message.includes('P1001')) {
+            message = 'Cannot connect to database. Please check your DATABASE_URL configuration.';
+          } else if (message.includes('P2002')) {
+            message = 'A record with this value already exists.';
+          }
+        }
       }
     }
 

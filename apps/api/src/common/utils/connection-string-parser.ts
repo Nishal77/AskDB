@@ -56,14 +56,21 @@ export class ConnectionStringParser {
       const database = url.pathname.slice(1) || url.searchParams.get('database') || '';
       const username = decodeURIComponent(url.username || '');
       const password = decodeURIComponent(url.password || '');
-      const ssl = url.searchParams.get('sslmode') === 'require' || 
-                  url.searchParams.get('ssl') === 'true' ||
+      
+      // Check for SSL requirements in connection string
+      const sslMode = url.searchParams.get('sslmode');
+      const sslParam = url.searchParams.get('ssl');
+      const ssl = sslMode === 'require' || 
+                  sslMode === 'prefer' ||
+                  sslParam === 'true' ||
                   url.searchParams.has('sslmode');
 
       // Detect Supabase (supabase.co domain)
       // Detect NeonDB (neon.tech domain or neon database)
       const isSupabase = host.includes('supabase.co');
       const isNeon = host.includes('neon.tech') || host.includes('neon');
+      
+      console.log(`🔍 Parsing connection string - SSL mode: ${sslMode}, SSL required: ${ssl}, Is Neon: ${isNeon}`);
 
       // Additional params
       const additionalParams: Record<string, string> = {};

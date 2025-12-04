@@ -25,13 +25,17 @@ pnpm install
 ### 3. Setup Database
 
 ```bash
-# Generate Prisma client
-cd packages/prisma
-pnpm prisma generate
+# Quick setup (recommended)
+pnpm db:setup
 
-# Run migrations
-pnpm prisma migrate dev --name init
+# Or manually:
+pnpm prisma:generate  # Generate Prisma Client
+pnpm migrate          # Deploy migrations to database
 ```
+
+**⚠️ Important:** If you see errors like "table does not exist", run `pnpm db:setup` first.
+
+See [DATABASE_SETUP.md](./DATABASE_SETUP.md) for detailed instructions.
 
 ### 4. Start Development
 
@@ -71,6 +75,8 @@ askyourdatabase/
 
 ## 📚 Documentation
 
+- `DOCKER_SETUP.md` - **Docker setup guide (everything automated!)** ⭐
+- `DATABASE_SETUP.md` - Database setup and migration guide
 - `ENV_MASTER_GUIDE.md` - Environment variables guide
 - `ENV_REQUIREMENTS.md` - Complete variable list
 - `QUICKSTART.md` - Quick start guide
@@ -84,13 +90,22 @@ pnpm dev              # Start both API and Web
 pnpm dev:api          # Start API only
 pnpm dev:web          # Start Web only
 
-# Docker
-pnpm docker:dev       # Development with Docker
+# Docker (Everything automated! 🚀)
+pnpm docker:dev       # Start everything: DB, migrations, API, Web (all automated)
+pnpm docker:dev:down  # Stop all services
 pnpm docker:prod      # Production with Docker
 pnpm docker:logs      # View logs
+pnpm docker:clean     # Clean everything (removes volumes)
 
 # Setup
 pnpm setup:env        # Create all .env files
+pnpm db:setup        # Setup database (generate client + run migrations)
+
+# Database
+pnpm migrate         # Deploy migrations (production)
+pnpm migrate:dev     # Create new migration (development)
+pnpm migrate:status  # Check migration status
+pnpm prisma:generate # Generate Prisma Client
 ```
 
 ## 🌐 Services

@@ -11,8 +11,12 @@ export default function NewConnectionPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
+  const [connectionType, setConnectionType] = useState<'connectionString' | 'supabase'>('connectionString');
   const [connectionString, setConnectionString] = useState('');
+  const [supabaseUrl, setSupabaseUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
+  const [databasePassword, setDatabasePassword] = useState('');
+  const [accessMode, setAccessMode] = useState<'read' | 'write' | 'update' | 'full'>('read');
   const [detectedType, setDetectedType] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
@@ -88,21 +92,44 @@ export default function NewConnectionPage() {
       return;
     }
 
-    if (!connectionString.trim()) {
-      setError('Connection string is required');
-      setLoading(false);
-      return;
+    // Validate based on connection type
+    if (connectionType === 'connectionString') {
+      if (!connectionString.trim()) {
+        setError('Connection string is required');
+        setLoading(false);
+        return;
+      }
+    } else if (connectionType === 'supabase') {
+      if (!supabaseUrl.trim()) {
+        setError('Supabase URL is required');
+        setLoading(false);
+        return;
+      }
+      if (!anonKey.trim()) {
+        setError('Anon key is required for Supabase');
+        setLoading(false);
+        return;
+      }
     }
 
     try {
       const formData: CreateConnectionDto = {
         name: name.trim(),
-        connectionString: connectionString.trim(),
-        anonKey: anonKey.trim() || undefined, // Only include if provided
+        // For Supabase, construct connection string from URL and anon key
+        connectionString: connectionType === 'supabase' 
+          ? `${supabaseUrl.trim()}` 
+          : connectionString.trim(),
+        anonKey: connectionType === 'supabase' ? anonKey.trim() : undefined,
+        // Include database password if provided (for full Supabase features)
+        password: connectionType === 'supabase' && databasePassword.trim() 
+          ? databasePassword.trim() 
+          : undefined,
+        // Include access mode
+        accessMode: accessMode,
       };
 
-      await connectionsApi.create(formData);
-      router.push('/dashboard');
+      const connection = await connectionsApi.create(formData);
+      router.push(`/dashboard/connections/${connection.id}`);
     } catch (err: any) {
       setError(err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to create connection');
     } finally {
@@ -151,53 +178,165 @@ export default function NewConnectionPage() {
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="connectionString" className="text-sm font-medium">
-                    Connection String
+                <label className="text-sm font-medium">Connection Type</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="connectionType"
+                      value="connectionString"
+                      checked={connectionType === 'connectionString'}
+                      onChange={(e) => setConnectionType(e.target.value as 'connectionString' | 'supabase')}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Connection String</span>
                   </label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAnalyze}
-                    disabled={isAnalyzing || !connectionString.trim()}
-                  >
-                    {isAnalyzing ? 'Analyzing...' : 'Analyze'}
-                  </Button>
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="connectionType"
+                      value="supabase"
+                      checked={connectionType === 'supabase'}
+                      onChange={(e) => setConnectionType(e.target.value as 'connectionString' | 'supabase')}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Supabase (URL + Anon Key)</span>
+                  </label>
                 </div>
-                <textarea
-                  id="connectionString"
-                  className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  placeholder="postgresql://user:password@host:port/database?sslmode=require"
-                  value={connectionString}
-                  onChange={(e) => handleConnectionStringChange(e.target.value)}
-                  required
-                />
-                {detectedType && (
-                  <p className="text-xs text-green-600 bg-green-50 p-2 rounded-md border border-green-200">
-                    ✓ Detected: {detectedType}
-                  </p>
-                )}
-                <p className="text-xs text-gray-500">
-                  Supported formats: PostgreSQL, MySQL, MongoDB, Supabase, NeonDB
-                </p>
               </div>
 
-              <div className="space-y-2">
-                <label htmlFor="anonKey" className="text-sm font-medium">
-                  Anon Key <span className="text-gray-400 text-xs font-normal">(optional - for Supabase and similar services)</span>
-                </label>
-                <Input
-                  id="anonKey"
-                  type="password"
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                  value={anonKey}
-                  onChange={(e) => setAnonKey(e.target.value)}
-                />
-                <p className="text-xs text-gray-500">
-                  Required for Supabase REST API access. Leave empty if not using Supabase.
-                </p>
-              </div>
+              {connectionType === 'connectionString' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="connectionString" className="text-sm font-medium">
+                      Connection String
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAnalyze}
+                      disabled={isAnalyzing || !connectionString.trim()}
+                    >
+                      {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                    </Button>
+                  </div>
+                  <textarea
+                    id="connectionString"
+                    className="w-full min-h-[120px] px-3 py-2 border border-input rounded-md bg-background text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    placeholder="postgresql://user:password@host:port/database?sslmode=require"
+                    value={connectionString}
+                    onChange={(e) => handleConnectionStringChange(e.target.value)}
+                    required
+                  />
+                  {detectedType && (
+                    <p className="text-xs text-green-600 bg-green-50 p-2 rounded-md border border-green-200">
+                      ✓ Detected: {detectedType}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Supported formats: PostgreSQL, MySQL, MongoDB, NeonDB
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label htmlFor="supabaseUrl" className="text-sm font-medium">
+                      Supabase URL
+                    </label>
+                    <Input
+                      id="supabaseUrl"
+                      type="url"
+                      placeholder="https://xxxxx.supabase.co"
+                      value={supabaseUrl}
+                      onChange={(e) => setSupabaseUrl(e.target.value)}
+                      required
+                    />
+                    <p className="text-xs text-gray-500">
+                      Your Supabase project URL (found in Project Settings → API)
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="anonKey" className="text-sm font-medium">
+                      Anon Key
+                    </label>
+                    <Input
+                      id="anonKey"
+                      type="password"
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      value={anonKey}
+                      onChange={(e) => setAnonKey(e.target.value)}
+                      required
+                    />
+                    <p className="text-xs text-gray-500">
+                      Your Supabase anon/public key (found in Project Settings → API)
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="databasePassword" className="text-sm font-medium">
+                      Database Password <span className="text-gray-400 font-normal">(Optional)</span>
+                    </label>
+                    <Input
+                      id="databasePassword"
+                      type="password"
+                      placeholder="Your database password (for full features)"
+                      value={databasePassword}
+                      onChange={(e) => setDatabasePassword(e.target.value)}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Your Supabase database password (found in Settings → Database). 
+                      <br />
+                      <span className="text-blue-600">Optional:</span> Required for full features like listing all tables, complex queries, and better performance.
+                      <br />
+                      <span className="text-green-600">Without it:</span> Basic SELECT queries will work via REST API.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="accessMode" className="text-sm font-medium">
+                      Access Mode
+                    </label>
+                    <select
+                      id="accessMode"
+                      value={accessMode}
+                      onChange={(e) => setAccessMode(e.target.value as 'read' | 'write' | 'update' | 'full')}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    >
+                      <option value="read">Read Only - SELECT queries only</option>
+                      <option value="write">Write - INSERT operations</option>
+                      <option value="update">Update - UPDATE operations</option>
+                      <option value="full">Full Access - All operations (SELECT, INSERT, UPDATE, DELETE)</option>
+                    </select>
+                    <p className="text-xs text-gray-500">
+                      Select the access level for this connection. This helps enforce security and prevents accidental data modifications.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {connectionType === 'connectionString' && (
+                <div className="space-y-2">
+                  <label htmlFor="accessMode" className="text-sm font-medium">
+                    Access Mode
+                  </label>
+                  <select
+                    id="accessMode"
+                    value={accessMode}
+                    onChange={(e) => setAccessMode(e.target.value as 'read' | 'write' | 'update' | 'full')}
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <option value="read">Read Only - SELECT queries only</option>
+                    <option value="write">Write - INSERT operations</option>
+                    <option value="update">Update - UPDATE operations</option>
+                    <option value="full">Full Access - All operations (SELECT, INSERT, UPDATE, DELETE)</option>
+                  </select>
+                  <p className="text-xs text-gray-500">
+                    Select the access level for this connection. This helps enforce security and prevents accidental data modifications.
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-4">
                 <Button type="submit" disabled={loading || isAnalyzing} className="flex-1">

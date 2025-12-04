@@ -22,12 +22,19 @@ model User {
   providerId      String?  // OAuth provider user ID
   providerEmail   String?  // Email from OAuth provider
   
+  // LLM/OpenRouter configuration
+  openRouterApiKey String?  // User's OpenRouter API key for LLM queries
+  
+  // Login tracking
+  lastLoginAt DateTime?  // Last successful login timestamp
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   databaseConnections DatabaseConnection[]
   queryHistories     QueryHistory[]
   auditLogs          AuditLog[]
+  loginHistories     LoginHistory[]
 
   @@index([email])
   @@index([provider, providerId])
@@ -45,6 +52,7 @@ model DatabaseConnection {
   username        String
   password        String // In production, encrypt this
   type            String   // 'postgresql' | 'mysql' | 'sqlite'
+  accessMode      String   @default("read") // 'read' | 'write' | 'update' | 'full'
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -81,5 +89,22 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model LoginHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  email       String   // Store email for tracking even if user is deleted
+  success     Boolean  // true for successful login, false for failed
+  ipAddress   String?
+  userAgent   String?
+  failureReason String? // Reason for failed login (e.g., "Invalid password")
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([email])
+  @@index([createdAt])
 }
 

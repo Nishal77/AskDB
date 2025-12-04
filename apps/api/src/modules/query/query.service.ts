@@ -30,7 +30,7 @@ export class QueryService {
     private vectorService: SchemaVectorService,
   ) {}
 
-  async executeQuery(dto: ExecuteQueryDto): Promise<QueryResult> {
+  async executeQuery(dto: ExecuteQueryDto, userOpenRouterKey?: string | null): Promise<QueryResult> {
     const startTime = Date.now();
 
     // Get database connection
@@ -48,10 +48,12 @@ export class QueryService {
     // Generate schema context for LLM
     const schemaContext = await this.generateSchemaContext(schemaMetadata);
 
-    // Generate SQL from natural language
+    // Generate SQL from natural language (use user's OpenRouter key if available)
     const sql = await this.llmService.generateSQL(
       dto.naturalLanguageQuery,
       schemaContext,
+      undefined, // examples
+      userOpenRouterKey, // user's OpenRouter key
     );
 
     // Validate SQL with guardrails
@@ -63,13 +65,39 @@ export class QueryService {
     // Sanitize SQL
     const sanitizedSQL = this.guardrailsService.sanitizeSQL(sql);
 
-    // Execute query
+    // Check access mode - enforce read-only if set
+    const accessMode = (connection as any).accessMode || 'read';
+    const isReadOnly = accessMode === 'read';
+    
+    // Validate SQL for read-only mode
+    if (isReadOnly) {
+      const sqlUpper = sanitizedSQL.trim().toUpperCase();
+      const dangerousKeywords = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER', 'TRUNCATE'];
+      for (const keyword of dangerousKeywords) {
+        if (sqlUpper.includes(keyword)) {
+          throw new BadRequestException(
+            `Operation ${keyword} is not allowed in read-only mode. Please change connection access mode to allow write operations.`
+          );
+        }
+      }
+    }
+
+    // Determine if SSL is required based on host
+    const requiresSsl = connection.host.includes('neon.tech') || 
+                        connection.host.includes('supabase.co') ||
+                        connection.host.includes('aws.') ||
+                        connection.host.includes('cloud.') ||
+                        connection.host.includes('amazonaws.com') ||
+                        connection.host.includes('pooler.'); // NeonDB pooler endpoints
+
+    // Execute query for PostgreSQL databases (NeonDB, Supabase, etc.)
     const pool = new Pool({
       host: connection.host,
       port: connection.port,
       database: connection.database,
       user: connection.username,
       password: connection.password,
+      ssl: requiresSsl ? { rejectUnauthorized: false } : false,
     });
 
     try {
@@ -79,7 +107,7 @@ export class QueryService {
       return {
         columns: result.fields.map((field) => field.name),
         rows: result.rows,
-        rowCount: result.rowCount,
+        rowCount: result.rowCount || 0,
         executionTime,
         sql: sanitizedSQL,
       };
@@ -101,4 +129,3 @@ export class QueryService {
     return contextParts.join('\n\n');
   }
 }
-

@@ -15,9 +15,18 @@ import { AppModule as RootAppModule } from './modules/app/app.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['../../.env', '../.env', '.env'],
-      // Also read from process.env (set by Docker Compose)
+      // Try multiple paths to find .env file (root, parent, current directory)
+      // Paths are relative to apps/api/src/
+      envFilePath: [
+        '../../.env',      // Root .env (from apps/api/src/ -> root)
+        '../.env',         // Parent .env
+        '.env',            // Current directory .env
+        process.env.ENV_FILE || '', // Custom path if set
+      ].filter(Boolean), // Remove empty strings
+      // Also read from process.env (set by Docker Compose or environment)
       ignoreEnvFile: false,
+      // Expand variables in .env file
+      expandVariables: true,
     }),
     RootAppModule,
     HealthModule,

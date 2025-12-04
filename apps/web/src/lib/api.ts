@@ -93,6 +93,22 @@ export const authApi = {
   logout: () => {
     localStorage.removeItem('access_token');
   },
+
+  updateOpenRouterKey: async (openRouterApiKey: string): Promise<User> => {
+    const response = await api.post<ApiResponse<User>>('/auth/openrouter-key', { openRouterApiKey });
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || 'Failed to update OpenRouter key');
+  },
+
+  deleteOpenRouterKey: async (): Promise<User> => {
+    const response = await api.delete<ApiResponse<User>>('/auth/openrouter-key');
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || 'Failed to delete OpenRouter key');
+  },
 };
 
 // Connections API
@@ -145,6 +161,24 @@ export const connectionsApi = {
       throw new Error(response.data.error || 'Connection test failed');
     }
   },
+
+  getStatus: async (id: string): Promise<{
+    connected: boolean;
+    status: 'connected' | 'disconnected' | 'error';
+    message: string;
+    lastChecked?: string;
+  }> => {
+    const response = await api.get<ApiResponse<{
+      connected: boolean;
+      status: 'connected' | 'disconnected' | 'error';
+      message: string;
+      lastChecked?: string;
+    }>>(`/admin/connections/status/${id}`);
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || 'Failed to get connection status');
+  },
 };
 
 // Schema API
@@ -157,6 +191,16 @@ export const schemaApi = {
       return response.data.data;
     }
     throw new Error(response.data.error || 'Failed to fetch schema');
+  },
+
+  getTablesWithRowCounts: async (connectionId: string): Promise<Array<{ tableName: string; rowCount: number }>> => {
+    const response = await api.get<ApiResponse<Array<{ tableName: string; rowCount: number }>>>(
+      `/schema/connection/${connectionId}/tables`,
+    );
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    throw new Error(response.data.error || 'Failed to fetch tables with row counts');
   },
 };
 

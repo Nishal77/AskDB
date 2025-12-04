@@ -61,24 +61,20 @@ export class GuardrailsService {
   }
 
   private detectSQLInjection(sql: string): boolean {
+    // Note: Semicolons are checked separately in validateSQL() for multiple statements
+    // Comments are generally safe in SELECT queries and are sanitized before execution
+    
     const suspiciousPatterns = [
-      /--/g, // SQL comments
-      /\/\*/g, // Multi-line comments
-      /;/g, // Statement terminators (already checked separately)
-      /UNION.*SELECT/gi,
-      /OR\s+1\s*=\s*1/gi,
-      /OR\s+'1'\s*=\s*'1'/gi,
-      /EXEC\s*\(/gi,
+      /UNION.*SELECT/gi, // UNION-based injection attempts
+      /OR\s+1\s*=\s*1/gi, // Always-true condition injection
+      /OR\s+'1'\s*=\s*'1'/gi, // Always-true condition injection (string)
+      /EXEC\s*\(/gi, // Function execution attempts
       /xp_/gi, // SQL Server extended procedures
     ];
 
+    // Check for suspicious patterns
     for (const pattern of suspiciousPatterns) {
       if (pattern.test(sql)) {
-        // Allow comments in SELECT queries if they're properly formatted
-        const patternString = pattern.toString();
-        if (patternString === '/--/g' || patternString === '/\\/\\*/g') {
-          continue;
-        }
         return true;
       }
     }

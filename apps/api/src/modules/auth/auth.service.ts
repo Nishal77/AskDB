@@ -29,17 +29,72 @@ export class AuthService {
         return result;
       }
       return null;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error validating user:', error);
+      // Check if it's a database schema error
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        throw new BadRequestException(
+          'Database schema not initialized. Please contact administrator or run migrations.'
+        );
+      }
       return null;
     }
   }
 
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, ipAddress?: string, userAgent?: string) {
+    const normalizedEmail = loginDto.email.trim().toLowerCase();
+    let failureReason: string | null = null;
+
     try {
-      const user = await this.validateUser(loginDto.email, loginDto.password);
+      const user = await this.validateUser(normalizedEmail, loginDto.password);
       if (!user) {
+        failureReason = 'Invalid credentials';
+        // Log failed login attempt
+        try {
+          const existingUser = await this.prisma.user.findUnique({
+            where: { email: normalizedEmail },
+          });
+          if (existingUser) {
+            await this.prisma.loginHistory.create({
+              data: {
+                userId: existingUser.id,
+                email: normalizedEmail,
+                success: false,
+                ipAddress: ipAddress || null,
+                userAgent: userAgent || null,
+                failureReason: failureReason,
+              },
+            });
+          } else {
+            // User doesn't exist - log with a placeholder userId (we'll handle this differently)
+            // For now, we'll skip logging non-existent users
+          }
+        } catch (logError) {
+          console.error('Failed to log login attempt:', logError);
+        }
         throw new UnauthorizedException('Invalid credentials');
+      }
+
+      // Update last login time
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+
+      // Log successful login
+      try {
+        await this.prisma.loginHistory.create({
+          data: {
+            userId: user.id,
+            email: user.email,
+            success: true,
+            ipAddress: ipAddress || null,
+            userAgent: userAgent || null,
+          },
+        });
+      } catch (logError) {
+        console.error('Failed to log successful login:', logError);
+        // Don't fail the login if logging fails
       }
 
       const payload = { email: user.email, sub: user.id };
@@ -49,6 +104,7 @@ export class AuthService {
           id: user.id,
           email: user.email,
           name: user.name,
+          openRouterApiKey: user.openRouterApiKey ? '***configured***' : null, // Don't expose full key
         },
       };
     } catch (error) {
@@ -86,9 +142,20 @@ export class AuthService {
       const normalizedEmail = email.toLowerCase();
 
       // Check if user already exists
-      const existingUser = await this.prisma.user.findUnique({
-        where: { email: normalizedEmail },
-      });
+      let existingUser;
+      try {
+        existingUser = await this.prisma.user.findUnique({
+          where: { email: normalizedEmail },
+        });
+      } catch (error: any) {
+        // Check if it's a database schema error
+        if (error.message?.includes('does not exist') || error.code === '42P01') {
+          throw new BadRequestException(
+            'Database schema not initialized. Please run migrations: pnpm migrate'
+          );
+        }
+        throw error;
+      }
 
       if (existingUser) {
         throw new BadRequestException('User with this email already exists');
@@ -108,10 +175,18 @@ export class AuthService {
 
       const { password: _, ...result } = user;
       return result;
-    } catch (error) {
+    } catch (error: any) {
       if (error instanceof BadRequestException) {
         throw error;
       }
+      
+      // Check if it's a database schema error
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        throw new BadRequestException(
+          'Database schema not initialized. Please run migrations: pnpm migrate'
+        );
+      }
+      
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('Registration error:', error);
       throw new BadRequestException('Registration failed: ' + errorMessage);
@@ -125,6 +200,64 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Invalid token');
     }
+  }
+
+  async getUserById(userId: string) {
+    let user;
+    try {
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          openRouterApiKey: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    } catch (error: any) {
+      // Check if it's a database schema error
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        throw new BadRequestException(
+          'Database schema not initialized. Please run migrations: pnpm migrate'
+        );
+      }
+      throw error;
+    }
+
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // Don't expose full key, just indicate if it's set
+    return {
+      ...user,
+      openRouterApiKey: user.openRouterApiKey ? '***configured***' : null,
+    };
+  }
+
+  async updateOpenRouterKey(userId: string, openRouterApiKey: string | null) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { openRouterApiKey: openRouterApiKey?.trim() || null },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        openRouterApiKey: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Don't expose full key in response
+    return {
+      ...user,
+      openRouterApiKey: user.openRouterApiKey ? '***configured***' : null,
+    };
   }
 }
 

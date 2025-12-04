@@ -2,25 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { authApi, connectionsApi } from '../../lib/api';
+import { connectionsApi } from '../../lib/api';
 import { Button, Card, CardHeader, CardTitle, CardContent } from '@askdb/ui';
-import type { User, DatabaseConnection } from '@askdb/types';
+import type { DatabaseConnection } from '@askdb/types';
 import Link from 'next/link';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
   const [connections, setConnections] = useState<DatabaseConnection[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [userData, connectionsData] = await Promise.all([
-          authApi.getMe(),
-          connectionsApi.getAll(),
-        ]);
-        setUser(userData);
+        const connectionsData = await connectionsApi.getAll();
         setConnections(connectionsData);
       } catch {
         router.push('/login');
@@ -31,11 +26,6 @@ export default function DashboardPage() {
     loadData();
   }, [router]);
 
-  const handleLogout = () => {
-    authApi.logout();
-    router.push('/login');
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -45,24 +35,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-bold">AskYourDatabase</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">{user?.email}</span>
-              <Button variant="outline" onClick={handleLogout}>
-                Logout
-              </Button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h2 className="text-2xl font-bold mb-2">Dashboard</h2>
           <p className="text-gray-600">Manage your database connections and queries</p>
@@ -128,8 +101,7 @@ export default function DashboardPage() {
             </Button>
           </Link>
         </div>
-      </main>
-    </div>
+    </main>
   );
 }
 

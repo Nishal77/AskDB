@@ -28,13 +28,25 @@ RUN pnpm install --filter @askdb/api...
 # Copy all the actual source code
 COPY . .
 
-# Generate prisma client (inside correct workspace)
+# Generate prisma client (inside correct workspace) - this is done at build time
+# But we'll also do it at runtime in case schema changes
 WORKDIR /app/packages/prisma
-RUN pnpm prisma generate
+RUN pnpm generate || echo "Prisma generate will run at startup"
+
+# Copy entrypoint script
+COPY infra/docker/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Install postgresql-client for pg_isready (for health checks)
+RUN apt-get update -y && \
+    apt-get install -y postgresql-client && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # API dev server runs from apps/api
 WORKDIR /app/apps/api
 
 EXPOSE 3000
 
-CMD ["pnpm", "dev"]
+# Use entrypoint script that handles: Prisma generation, migrations, build, and dev server
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

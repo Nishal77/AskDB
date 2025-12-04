@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ApiResponse } from '../../common/utils/response.util';
 import { InsightsService } from '../insights/insights.service';
+import { PrismaService } from '../db/prisma.service';
 
 @Controller('query')
 @UseGuards(JwtAuthGuard)
@@ -21,6 +22,7 @@ export class QueryController {
     private queryService: QueryService,
     private queryHistoryService: QueryHistoryService,
     private insightsService: InsightsService,
+    private prisma: PrismaService,
   ) {}
 
   @Post('execute')
@@ -29,10 +31,19 @@ export class QueryController {
     @CurrentUser() user: any,
   ) {
     try {
-      const result = await this.queryService.executeQuery({
-        ...dto,
-        userId: user.id,
+      // Get user's OpenRouter key if they have one
+      const userRecord = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { openRouterApiKey: true },
       });
+
+      const result = await this.queryService.executeQuery(
+        {
+          ...dto,
+          userId: user.id,
+        },
+        userRecord?.openRouterApiKey,
+      );
 
       // Generate insights
       const insights = await this.insightsService.generateInsights(

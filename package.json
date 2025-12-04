@@ -18,8 +18,11 @@
     "docker:logs": "docker-compose -f infra/docker/docker-compose.yml logs -f",
     "docker:clean": "docker-compose -f infra/docker/docker-compose.yml down -v && docker system prune -f",
     "setup:env": "./SETUP_ENV.sh",
-    "migrate": "cd packages/prisma && pnpm migrate deploy",
-    "migrate:dev": "cd packages/prisma && pnpm migrate dev"
+    "migrate": "cd packages/prisma && pnpm migrate:deploy",
+    "migrate:dev": "cd packages/prisma && pnpm migrate",
+    "migrate:status": "cd packages/prisma && pnpm migrate:status",
+    "prisma:generate": "cd packages/prisma && pnpm generate",
+    "db:setup": "cd packages/prisma && pnpm generate && pnpm migrate:deploy"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

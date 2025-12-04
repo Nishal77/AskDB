@@ -35,6 +35,15 @@ export class AdminController {
     return ApiResponse.success(connections, 'Connections retrieved');
   }
 
+  @Get('status/:id')
+  async getConnectionStatus(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+  ) {
+    const status = await this.adminService.getConnectionStatus(id, user.id);
+    return ApiResponse.success(status, 'Connection status retrieved');
+  }
+
   @Get(':id')
   async getConnection(
     @Param('id') id: string,
@@ -67,7 +76,7 @@ export class AdminController {
   async testConnection(
     @Body() dto: CreateConnectionDto,
   ) {
-    await this.adminService.testConnection(dto);
+    await this.adminService.testConnectionDto(dto);
     return ApiResponse.success(null, 'Connection test successful');
   }
 

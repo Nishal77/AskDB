@@ -29,10 +29,10 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/askyourdatabase?schema=public
+      DATABASE_URL: ${DATABASE_URL:-postgresql://neondb_owner:npg_aAXHf6YeI3OD@ep-orange-darkness-a4vv71p4-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require}
       JWT_SECRET: ${JWT_SECRET:-95hM8HYWgGmKIVw/tfIS59zzb0Vc4E8myGbVOZESuT0=}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-      OPENROUTER_API_KEY: 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
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-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}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4-turbo-preview}
       OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL:-openai/text-embedding-3-small}
       VECTOR_DB_HOST: postgres
@@ -46,6 +46,7 @@ services:
     volumes:
       - ../../apps/api:/app/apps/api
       - ../../packages:/app/packages
+      - ../../scripts:/app/scripts
       - /app/node_modules
       - /app/apps/api/node_modules
       - api_dist:/app/apps/api/dist
@@ -54,7 +55,7 @@ services:
         condition: service_healthy
     networks:
       - askdb-network
-    # Command is handled by Dockerfile CMD
+    # Entrypoint script handles: Prisma generation, migrations, build, and dev server
     restart: unless-stopped
 
   web:

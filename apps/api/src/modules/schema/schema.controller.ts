@@ -33,5 +33,14 @@ export class SchemaController {
     // For now, just return the metadata
     return ApiResponse.success(metadata, 'Schema ready for embedding');
   }
+
+  @Get('connection/:connectionId/tables')
+  async getTablesWithRowCounts(
+    @Param('connectionId') connectionId: string,
+    @CurrentUser() _user: any,
+  ) {
+    const tables = await this.schemaService.getTablesWithRowCounts(connectionId);
+    return ApiResponse.success(tables, 'Tables with row counts retrieved successfully');
+  }
 }
 

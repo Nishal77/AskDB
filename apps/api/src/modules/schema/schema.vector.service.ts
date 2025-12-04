@@ -121,8 +121,15 @@ export class SchemaVectorService {
       parts.push('Indexes:');
       metadata.indexes.forEach((idx) => {
         const unique = idx.isUnique ? 'UNIQUE ' : '';
+        // Ensure columnNames is an array before calling join
+        const columnNames = Array.isArray(idx.columnNames) 
+          ? idx.columnNames 
+          : (idx.columnNames ? [idx.columnNames] : []);
+        const columnsStr = columnNames.length > 0 
+          ? columnNames.join(', ') 
+          : 'unknown';
         parts.push(
-          `  - ${unique}${idx.indexName} on (${idx.columnNames.join(', ')})`,
+          `  - ${unique}${idx.indexName} on (${columnsStr})`,
         );
       });
     }

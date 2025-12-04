@@ -1,12 +1,12 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../db/prisma.service';
 import { Pool } from 'pg';
-import { ConnectionStringParser, ParsedConnectionString } from '../../common/utils/connection-string-parser';
+import { ConnectionStringParser } from '../../common/utils/connection-string-parser';
 
 export interface CreateConnectionDto {
   name: string;
-  connectionString?: string; // Connection string/URL
-  anonKey?: string; // Anon key (for Supabase and similar services)
+  connectionString?: string; // Connection string/URL (PostgreSQL, MySQL, NeonDB, etc.)
+  accessMode?: 'read' | 'write' | 'update' | 'full'; // Access mode for the connection
   // Legacy fields (for backward compatibility)
   host?: string;
   port?: number;
@@ -23,6 +23,7 @@ export interface UpdateConnectionDto {
   database?: string;
   username?: string;
   password?: string;
+  accessMode?: 'read' | 'write' | 'update' | 'full';
 }
 
 @Injectable()
@@ -30,6 +31,7 @@ export class AdminService {
   constructor(private prisma: PrismaService) {}
 
   async createConnection(userId: string, dto: CreateConnectionDto) {
+    // Parse and validate connection details
     let connectionDetails: {
       host: string;
       port: number;
@@ -37,19 +39,25 @@ export class AdminService {
       username: string;
       password: string;
       type: 'postgresql' | 'mysql' | 'sqlite';
+      requiresSsl?: boolean;
     };
 
-    // Parse connection string if provided
     if (dto.connectionString) {
-      const parsed = ConnectionStringParser.parse(dto.connectionString);
-      connectionDetails = {
-        host: parsed.host,
-        port: parsed.port,
-        database: parsed.database,
-        username: parsed.username,
-        password: parsed.password,
-        type: parsed.type === 'mongodb' ? 'postgresql' : parsed.type, // MongoDB not fully supported yet, treat as postgresql for now
-      };
+      // Parse connection string (supports PostgreSQL, NeonDB, MySQL, etc.)
+      try {
+        const parsed = ConnectionStringParser.parse(dto.connectionString);
+        connectionDetails = {
+          host: parsed.host,
+          port: parsed.port,
+          database: parsed.database,
+          username: parsed.username,
+          password: parsed.password,
+          type: parsed.type === 'mongodb' ? 'postgresql' : parsed.type,
+          requiresSsl: parsed.ssl, // Pass SSL flag from parsed connection string
+        };
+      } catch (error: any) {
+        throw new BadRequestException(`Invalid connection string: ${error.message}`);
+      }
     } else {
       // Use legacy fields
       if (!dto.host || !dto.database || !dto.username || !dto.password || !dto.type) {
@@ -64,27 +72,42 @@ export class AdminService {
         username: dto.username,
         password: dto.password,
         type: dto.type,
+        requiresSsl: undefined, // Will be determined by hostname in testConnection
       };
     }
 
     // Test connection before saving
+    console.log('🔵 Testing database connection...');
+    console.log(`   Host: ${connectionDetails.host}`);
+    console.log(`   Database: ${connectionDetails.database}`);
+    console.log(`   SSL Required: ${connectionDetails.requiresSsl}`);
     await this.testConnection(connectionDetails);
 
-    // Store connection details including the original connection string and anon key if provided
+    // Store connection details
+    try {
     return await this.prisma.databaseConnection.create({
       data: {
         userId,
-        name: dto.name.trim(), // Ensure name is stored
-        connectionString: dto.connectionString?.trim() || null, // Store original connection string/URL
-        anonKey: dto.anonKey?.trim() || null, // Store anon key (for Supabase and similar)
+          name: dto.name.trim(),
+          connectionString: dto.connectionString?.trim() || null,
+          anonKey: null, // Not used for regular connections
         host: connectionDetails.host,
         port: connectionDetails.port,
         database: connectionDetails.database,
         username: connectionDetails.username,
-        password: connectionDetails.password, // In production, encrypt this
+          password: connectionDetails.password,
         type: connectionDetails.type,
+          accessMode: dto.accessMode || 'read',
       },
     });
+    } catch (error: any) {
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        throw new BadRequestException(
+          'Database schema not initialized. Please run migrations: pnpm migrate'
+        );
+      }
+      throw error;
+    }
   }
 
   async updateConnection(
@@ -92,7 +115,6 @@ export class AdminService {
     userId: string,
     dto: UpdateConnectionDto,
   ) {
-    // Verify ownership
     const connection = await this.prisma.databaseConnection.findFirst({
       where: { id: connectionId, userId },
     });
@@ -101,18 +123,30 @@ export class AdminService {
       throw new BadRequestException('Connection not found');
     }
 
-    // If connection details changed, test the connection
+    // If connection details are being updated, test them first
     if (dto.host || dto.port || dto.database || dto.username || dto.password) {
-      await this.testConnection({
-        ...connection,
-        ...dto,
-        type: connection.type as any,
-      });
+      const newDetails = {
+        host: dto.host || connection.host,
+        port: dto.port || connection.port,
+        database: dto.database || connection.database,
+        username: dto.username || connection.username,
+        password: dto.password || connection.password,
+        type: connection.type as 'postgresql' | 'mysql' | 'sqlite',
+      };
+      await this.testConnection(newDetails);
     }
 
-    return await this.prisma.databaseConnection.update({
+    return this.prisma.databaseConnection.update({
       where: { id: connectionId },
-      data: dto,
+      data: {
+        name: dto.name,
+        host: dto.host,
+        port: dto.port,
+        database: dto.database,
+        username: dto.username,
+        password: dto.password,
+        accessMode: dto.accessMode,
+      },
     });
   }
 
@@ -125,13 +159,13 @@ export class AdminService {
       throw new BadRequestException('Connection not found');
     }
 
-    return await this.prisma.databaseConnection.delete({
+    return this.prisma.databaseConnection.delete({
       where: { id: connectionId },
     });
   }
 
   async getConnections(userId: string) {
-    return await this.prisma.databaseConnection.findMany({
+    return this.prisma.databaseConnection.findMany({
       where: { userId },
       select: {
         id: true,
@@ -139,10 +173,11 @@ export class AdminService {
         host: true,
         port: true,
         database: true,
+        username: true,
         type: true,
+        accessMode: true,
         createdAt: true,
         updatedAt: true,
-        // Don't return password
       },
     });
   }
@@ -156,7 +191,9 @@ export class AdminService {
         host: true,
         port: true,
         database: true,
+        username: true,
         type: true,
+        accessMode: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -169,61 +206,226 @@ export class AdminService {
     return connection;
   }
 
-  async testConnection(
-    dto: CreateConnectionDto | (UpdateConnectionDto & { type: string }) | ParsedConnectionString,
-  ) {
+  async testConnectionById(connectionId: string, userId: string) {
+    const connection = await this.prisma.databaseConnection.findFirst({
+      where: { id: connectionId, userId },
+    });
+
+    if (!connection) {
+      throw new BadRequestException('Connection not found');
+    }
+
+    await this.testConnection({
+      host: connection.host,
+      port: connection.port,
+      database: connection.database,
+      username: connection.username,
+      password: connection.password,
+      type: connection.type as 'postgresql' | 'mysql' | 'sqlite',
+    });
+
+    return { success: true, message: 'Connection test successful' };
+  }
+
+  async getConnectionStatus(connectionId: string, userId: string) {
+    const connection = await this.prisma.databaseConnection.findFirst({
+      where: { id: connectionId, userId },
+    });
+
+    if (!connection) {
+      throw new BadRequestException('Connection not found');
+    }
+
+    // Determine if SSL is required based on host (same logic as testConnection)
+    const requiresSsl = connection.host.includes('neon.tech') || 
+                        connection.host.includes('supabase.co') ||
+                        connection.host.includes('aws.') ||
+                        connection.host.includes('cloud.') ||
+                        connection.host.includes('amazonaws.com') ||
+                        connection.host.includes('pooler.');
+
     try {
-      // Handle ParsedConnectionString
-      if ('type' in dto && 'host' in dto && 'database' in dto) {
-        if (dto.type === 'postgresql') {
-          const pool = new Pool({
-            host: dto.host,
-            port: dto.port,
-            database: dto.database,
-            user: dto.username,
-            password: dto.password,
-            ssl: dto.ssl,
-            connectionTimeoutMillis: 5000,
-          });
+      await this.testConnection({
+        host: connection.host,
+        port: connection.port,
+        database: connection.database,
+        username: connection.username,
+        password: connection.password,
+        type: connection.type as 'postgresql' | 'mysql' | 'sqlite',
+        requiresSsl, // Pass SSL requirement
+      });
 
-          await pool.query('SELECT 1');
-          await pool.end();
-        } else if (dto.type === 'mysql') {
-          // MySQL connection testing would go here
-          // For now, we'll throw an error as MySQL support needs to be added
-          throw new BadRequestException('MySQL connection testing not yet implemented');
-        } else {
-          throw new BadRequestException('Unsupported database type for testing');
-        }
-      } else {
-        // Legacy format
-        const legacyDto = dto as CreateConnectionDto | (UpdateConnectionDto & { type: string });
-        if (!legacyDto.host || !legacyDto.database || !legacyDto.username || !legacyDto.password) {
-          throw new BadRequestException('Missing required connection fields');
-        }
-
-        if (legacyDto.type === 'postgresql') {
-          const pool = new Pool({
-            host: legacyDto.host,
-            port: legacyDto.port || 5432,
-            database: legacyDto.database,
-            user: legacyDto.username,
-            password: legacyDto.password,
-            connectionTimeoutMillis: 5000,
-          });
-
-          await pool.query('SELECT 1');
-          await pool.end();
-        } else {
-          throw new BadRequestException('Only PostgreSQL connections are currently supported for testing');
-        }
-      }
+      // Return format expected by frontend
+      return {
+        connected: true,
+        status: 'connected' as const,
+        message: 'Connection successful',
+        lastChecked: new Date().toISOString(),
+      };
     } catch (error: any) {
-      if (error instanceof BadRequestException) {
-        throw error;
+      // Return format expected by frontend
+      return {
+        connected: false,
+        status: 'error' as const,
+        message: error.message || 'Connection failed',
+        lastChecked: new Date().toISOString(),
+      };
+    }
+  }
+
+  async testConnectionDto(dto: CreateConnectionDto) {
+    let connectionDetails: {
+      host: string;
+      port: number;
+      database: string;
+      username: string;
+      password: string;
+      type: 'postgresql' | 'mysql' | 'sqlite';
+      requiresSsl?: boolean;
+    };
+
+    if (dto.connectionString) {
+      try {
+        const parsed = ConnectionStringParser.parse(dto.connectionString);
+        connectionDetails = {
+          host: parsed.host,
+          port: parsed.port,
+          database: parsed.database,
+          username: parsed.username,
+          password: parsed.password,
+          type: parsed.type === 'mongodb' ? 'postgresql' : parsed.type,
+          requiresSsl: parsed.ssl, // Use SSL flag from parsed connection string
+        };
+      } catch (error: any) {
+        throw new BadRequestException(`Invalid connection string: ${error.message}`);
       }
-      throw new BadRequestException(`Connection test failed: ${error.message}`);
+    } else if (dto.host && dto.database && dto.username && dto.password && dto.type) {
+      connectionDetails = {
+        host: dto.host,
+        port: dto.port || (dto.type === 'postgresql' ? 5432 : dto.type === 'mysql' ? 3306 : 0),
+        database: dto.database,
+        username: dto.username,
+        password: dto.password,
+        type: dto.type,
+        requiresSsl: undefined, // Will be determined by hostname in testConnection
+      };
+    } else {
+      throw new BadRequestException(
+        'Either connectionString or all individual fields (host, database, username, password, type) are required'
+      );
+    }
+
+    await this.testConnection(connectionDetails);
+  }
+
+  private async testConnection(details: {
+    host: string;
+    port: number;
+    database: string;
+    username: string;
+    password: string;
+    type: 'postgresql' | 'mysql' | 'sqlite';
+    requiresSsl?: boolean;
+  }) {
+    if (details.type !== 'postgresql') {
+      throw new BadRequestException('Only PostgreSQL connections are currently supported');
+    }
+
+    // Determine if SSL is required:
+    // 1. Use explicit SSL flag from connection string if provided
+    // 2. Otherwise, determine based on hostname
+    const requiresSsl = details.requiresSsl !== undefined 
+      ? details.requiresSsl
+      : details.host.includes('neon.tech') || 
+        details.host.includes('supabase.co') ||
+        details.host.includes('aws.') ||
+        details.host.includes('cloud.') ||
+        details.host.includes('amazonaws.com') ||
+        details.host.includes('pooler.'); // NeonDB pooler endpoints
+
+    console.log(`🔍 Connection test - SSL required: ${requiresSsl}, Host: ${details.host}`);
+
+    // Always use SSL for NeonDB and cloud databases, or if explicitly required
+    const pool = new Pool({
+      host: details.host,
+      port: details.port,
+      database: details.database,
+      user: details.username,
+      password: details.password,
+      ssl: requiresSsl ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 10000, // 10 second timeout
+    });
+
+    try {
+      const client = await pool.connect();
+      await client.query('SELECT 1');
+      client.release();
+      console.log('✅ Database connection test successful');
+    } catch (error: any) {
+      console.error('❌ Database connection test failed:', error.message);
+      await pool.end(); // Close the pool before retrying
+      
+      // If we got an insecure connection error, retry with SSL (even if we thought SSL was enabled)
+      if (error.message.includes('connection is insecure') || 
+          error.message.includes('sslmode') ||
+          error.message.includes('SSL connection') ||
+          error.message.includes('server does not support SSL')) {
+        // Only retry if we didn't already use SSL
+        if (!requiresSsl) {
+          console.log('🔄 Retrying with SSL enabled...');
+          const sslPool = new Pool({
+            host: details.host,
+            port: details.port,
+            database: details.database,
+            user: details.username,
+            password: details.password,
+            ssl: { rejectUnauthorized: false },
+            connectionTimeoutMillis: 10000,
+          });
+          
+          try {
+            const client = await sslPool.connect();
+            await client.query('SELECT 1');
+            client.release();
+            await sslPool.end();
+            console.log('✅ Database connection test successful (with SSL)');
+            return; // Success with SSL
+          } catch (sslError: any) {
+            await sslPool.end();
+            throw new BadRequestException(`Connection test failed: ${sslError.message}`);
+          }
+        } else {
+          // SSL was already enabled but still failed - might be SSL configuration issue
+          throw new BadRequestException(
+            `Connection test failed with SSL enabled: ${error.message}. ` +
+            `Please verify your connection string and SSL settings.`
+          );
+        }
+      }
+      
+      // Provide helpful error messages
+      if (error.message.includes('ENOTFOUND')) {
+        throw new BadRequestException(
+          `Cannot reach database host: ${details.host}. Please check the hostname.`
+        );
+      } else if (error.message.includes('password authentication failed')) {
+        throw new BadRequestException(
+          'Authentication failed. Please check your username and password.'
+        );
+      } else if (error.message.includes('does not exist')) {
+        throw new BadRequestException(
+          `Database "${details.database}" does not exist. Please check the database name.`
+        );
+      } else {
+        throw new BadRequestException(`Connection test failed: ${error.message}`);
+      }
+    } finally {
+      // Pool is already closed in catch block if error occurred
+      try {
+        await pool.end();
+      } catch {
+        // Ignore errors when closing pool
+      }
     }
   }
 }
-
