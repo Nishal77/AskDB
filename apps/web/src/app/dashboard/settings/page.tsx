@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '../../../lib/api';
-import { Button, Input, Card, CardHeader, CardTitle, CardContent, CardDescription } from '@askdb/ui';
+import { Button, Input, Card, CardHeader, CardTitle, CardContent, CardDescription, Badge, Spinner } from '@askdb/ui';
 import type { User } from '@askdb/types';
 import Link from 'next/link';
+import { Settings, Key, User as UserIcon, Mail, CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -78,108 +79,170 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <Spinner className="h-8 w-8 text-foreground mx-auto" />
+          <p className="text-sm text-muted-foreground font-medium">Loading settings...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-4xl">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold mb-2">Settings</h2>
-          <p className="text-gray-600">Manage your account and API keys</p>
+    <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      {/* Header Section */}
+      <div className="mb-10">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center">
+            <Settings className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <div>
+            <h1 className="text-4xl font-semibold tracking-tight text-foreground">
+              Settings
+            </h1>
+            <p className="text-muted-foreground text-lg mt-1">
+              Manage your account and API keys
+            </p>
+          </div>
         </div>
+      </div>
 
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>OpenRouter API Key</CardTitle>
-            <CardDescription>
-              Add your OpenRouter API key to use your own credits for LLM queries. 
-              If not set, the system will use the default API key.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {success && (
-              <div className="p-3 text-sm text-green-600 bg-green-50 rounded-md border border-green-200 mb-4">
-                {success}
-              </div>
-            )}
-            {error && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md border border-red-200 mb-4">
-                {error}
-              </div>
-            )}
-
-            {hasOpenRouterKey && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p className="text-sm text-blue-800">
-                  ✓ OpenRouter API key is configured
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDeleteOpenRouterKey}
-                  disabled={saving}
-                  className="mt-2"
-                >
-                  Remove Key
-                </Button>
-              </div>
-            )}
-
-            <form onSubmit={handleSaveOpenRouterKey} className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="openRouterKey" className="text-sm font-medium">
-                  OpenRouter API Key
-                </label>
-                <Input
-                  id="openRouterKey"
-                  type="password"
-                  placeholder="sk-or-v1-..."
-                  value={openRouterKey}
-                  onChange={(e) => setOpenRouterKey(e.target.value)}
-                  disabled={saving}
-                />
-                <p className="text-xs text-gray-500">
-                  Get your API key from{' '}
-                  <a
-                    href="https://openrouter.ai/keys"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline"
-                  >
-                    openrouter.ai/keys
-                  </a>
-                </p>
-              </div>
-              <Button type="submit" disabled={saving || !openRouterKey.trim()}>
-                {saving ? 'Saving...' : hasOpenRouterKey ? 'Update Key' : 'Save Key'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Account Information</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-600">Email</label>
-                <p className="text-sm mt-1">{user?.email}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-600">Name</label>
-                <p className="text-sm mt-1">{user?.name || 'Not set'}</p>
-              </div>
+      {/* OpenRouter API Key Section */}
+      <Card className="mb-6 border bg-card/50 backdrop-blur-sm">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-10 w-10 rounded-lg bg-muted/50 flex items-center justify-center">
+              <Key className="h-5 w-5 text-muted-foreground" />
             </div>
-          </CardContent>
-        </Card>
+            <div>
+              <CardTitle className="text-2xl font-semibold">OpenRouter API Key</CardTitle>
+              <CardDescription className="mt-1 text-base">
+                Add your OpenRouter API key to use your own credits for LLM queries. 
+                If not set, the system will use the default API key.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {success && (
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50 border border-muted">
+              <CheckCircle2 className="h-5 w-5 text-foreground flex-shrink-0" />
+              <p className="text-sm font-medium text-foreground">{success}</p>
+            </div>
+          )}
+          {error && (
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+              <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
+              <p className="text-sm font-medium text-destructive">{error}</p>
+            </div>
+          )}
+
+          {hasOpenRouterKey && (
+            <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-muted">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 text-foreground" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    OpenRouter API key is configured
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Your API key is securely stored
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDeleteOpenRouterKey}
+                disabled={saving}
+                className="gap-2"
+              >
+                Remove Key
+              </Button>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveOpenRouterKey} className="space-y-5">
+            <div className="space-y-2">
+              <label htmlFor="openRouterKey" className="text-sm font-semibold text-foreground">
+                OpenRouter API Key
+              </label>
+              <Input
+                id="openRouterKey"
+                type="password"
+                placeholder="sk-or-v1-..."
+                value={openRouterKey}
+                onChange={(e) => setOpenRouterKey(e.target.value)}
+                disabled={saving}
+                className="h-11 border"
+              />
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                Get your API key from{' '}
+                <a
+                  href="https://openrouter.ai/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-foreground hover:underline font-medium inline-flex items-center gap-1"
+                >
+                  openrouter.ai/keys
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </p>
+            </div>
+            <Button 
+              type="submit" 
+              disabled={saving || !openRouterKey.trim()}
+              size="lg"
+              className="gap-2"
+            >
+              {saving ? 'Saving...' : hasOpenRouterKey ? 'Update Key' : 'Save Key'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Account Information Section */}
+      <Card className="border-2 bg-card/50 backdrop-blur-sm">
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-10 w-10 rounded-lg bg-muted/50 flex items-center justify-center">
+              <UserIcon className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <CardTitle className="text-2xl font-semibold">Account Information</CardTitle>
+              <CardDescription className="mt-1 text-base">
+                Your account details and profile information
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 mb-1">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Email
+                </label>
+              </div>
+              <p className="text-base font-medium text-foreground ml-6">{user?.email}</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 mb-1">
+                <UserIcon className="h-4 w-4 text-muted-foreground" />
+                <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Name
+                </label>
+              </div>
+              <p className="text-base font-medium text-foreground ml-6">
+                {user?.name || (
+                  <span className="text-muted-foreground italic">Not set</span>
+                )}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </main>
   );
 }

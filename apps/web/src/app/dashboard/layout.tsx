@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi } from '../../lib/api';
 import { DashboardNavbar } from '../../components/dashboard-navbar/dashboard-navbar';
+import { Spinner } from '@askdb/ui';
 import type { User } from '@askdb/types';
 
 export default function DashboardLayout({
@@ -37,9 +38,9 @@ export default function DashboardLayout({
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading...</p>
+        <div className="text-center space-y-4">
+          <Spinner className="h-8 w-8 text-foreground mx-auto" />
+          <p className="text-sm text-muted-foreground font-medium">Loading...</p>
         </div>
       </div>
     );

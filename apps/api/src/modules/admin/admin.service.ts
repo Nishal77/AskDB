@@ -151,17 +151,22 @@ export class AdminService {
   }
 
   async deleteConnection(connectionId: string, userId: string) {
+    // Verify connection exists and belongs to user
     const connection = await this.prisma.databaseConnection.findFirst({
       where: { id: connectionId, userId },
     });
 
     if (!connection) {
-      throw new BadRequestException('Connection not found');
+      throw new BadRequestException('Connection not found or you do not have permission to delete it');
     }
 
-    return this.prisma.databaseConnection.delete({
+    // Delete connection (Prisma will cascade delete related QueryHistory records)
+    // due to onDelete: Cascade in schema
+    await this.prisma.databaseConnection.delete({
       where: { id: connectionId },
     });
+
+    return { success: true, message: 'Connection deleted successfully' };
   }
 
   async getConnections(userId: string) {

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@askdb/ui';
-import { Send, Database, CheckCircle2, XCircle, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { Button, Spinner } from '@askdb/ui';
+import { Send, Database, CheckCircle2, XCircle, AlertCircle, Sparkles } from 'lucide-react';
 
 interface TableInfo {
   tableName: string;
@@ -84,7 +84,7 @@ export function QueryBox({
               <div className="flex items-center">
                 {loadingStatus ? (
                   <div className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-gray-100 border border-gray-300">
-                    <Loader2 className="h-4 w-4 animate-spin text-gray-600" />
+                    <Spinner className="h-4 w-4 text-gray-600" />
                     <span className="text-sm font-semibold text-gray-700">Checking connection...</span>
                   </div>
                 ) : connectionStatus.connected ? (
@@ -195,7 +195,7 @@ export function QueryBox({
           >
             {loading ? (
                 <div className="flex items-center justify-center space-x-2">
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <Spinner className="h-5 w-5" />
                   <span>Processing...</span>
                 </div>
               ) : (
