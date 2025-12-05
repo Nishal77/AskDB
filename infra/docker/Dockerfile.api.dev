@@ -20,7 +20,6 @@ COPY apps/api/package.json ./apps/api/
 COPY packages/types/package.json ./packages/types/
 COPY packages/ui/package.json ./packages/ui/
 COPY packages/prisma/package.json ./packages/prisma/
-COPY packages/embeddings/package.json ./packages/embeddings/
 
 # Install dependencies in workspace
 RUN pnpm install --filter @askdb/api...

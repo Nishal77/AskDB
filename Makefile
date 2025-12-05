@@ -10,7 +10,7 @@ install: ## Install all dependencies
 	pnpm install
 
 setup: ## Setup development environment
-	./infra/scripts/run-dev.sh
+	pnpm setup:env && pnpm install && pnpm db:setup
 
 dev: ## Start both API and Web in development mode
 	pnpm dev

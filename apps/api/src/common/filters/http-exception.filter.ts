@@ -31,7 +31,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           : errorMessage || message;
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
+        message = exception.message;
       // Handle CORS errors
       if (message.includes('CORS')) {
         status = HttpStatus.FORBIDDEN;
@@ -41,12 +41,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // Log error for debugging (production should use proper logger)
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       console.error('Internal Server Error:', {
-        status,
-        message,
-        path: request.url,
-        method: request.method,
-        stack: exception instanceof Error ? exception.stack : undefined,
-      });
+      status,
+      message,
+      path: request.url,
+      method: request.method,
+      stack: exception instanceof Error ? exception.stack : undefined,
+    });
     }
 
     const errorResponse = {

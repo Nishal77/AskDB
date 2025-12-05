@@ -50,11 +50,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto, @Req() request: Request) {
     try {
-      const ipAddress =
-        request.ip ||
-        (request as any).connection?.remoteAddress ||
-        request.headers['x-forwarded-for'] ||
-        'unknown';
+    const ipAddress =
+      request.ip ||
+      (request as any).connection?.remoteAddress ||
+      request.headers['x-forwarded-for'] ||
+      'unknown';
       const userAgent = request.headers['user-agent'] || 'unknown';
       const result = await this.authService.login(loginDto, ipAddress, userAgent);
       return ApiResponse.success(result, 'Login successful');

@@ -22,8 +22,7 @@
     "paths": {
       "@/*": ["src/*"],
       "@askdb/types": ["../../packages/types/src"],
-      "@askdb/prisma": ["../../packages/prisma/src"],
-      "@askdb/embeddings": ["../../packages/embeddings/src"]
+      "@askdb/prisma": ["../../packages/prisma/src"]
     }
   },
   "include": ["src/**/*"],

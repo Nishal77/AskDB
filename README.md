@@ -1,120 +1,164 @@
 # AskYourDatabase
 
-AI-powered system that lets users query any database using natural language instead of writing SQL.
+AI-powered system that enables users to query databases using natural language instead of writing SQL queries.
 
-## 🚀 Quick Start
+## Prerequisites
 
-### 1. Setup Environment Variables
+- Node.js 18+ and pnpm 8+
+- PostgreSQL database
+- OpenRouter API key
 
+## Installation
+
+1. Clone the repository:
 ```bash
-# Copy .env.example to .env
-cp .env.example .env
-
-# Edit .env and add your values:
-# - OPENROUTER_API_KEY (already set with your key)
-# - DATABASE_URL (for Prisma)
-# - JWT_SECRET (generate with: openssl rand -base64 32)
+git clone <repository-url>
+cd Askyourdatabase
 ```
 
-### 2. Install Dependencies
-
+2. Install dependencies:
 ```bash
 pnpm install
 ```
 
-### 3. Setup Database
-
+3. Setup environment variables:
 ```bash
-# Quick setup (recommended)
-pnpm db:setup
-
-# Or manually:
-pnpm prisma:generate  # Generate Prisma Client
-pnpm migrate          # Deploy migrations to database
+pnpm setup:env
 ```
 
-**⚠️ Important:** If you see errors like "table does not exist", run `pnpm db:setup` first.
+4. Configure environment variables:
+Edit the `.env` file in the root directory and set the following required values:
+- `OPENROUTER_API_KEY` - Your OpenRouter API key
+- `DATABASE_URL` - PostgreSQL connection string
+- `JWT_SECRET` - Generate a secret key using: `openssl rand -base64 32`
 
-See [DATABASE_SETUP.md](./DATABASE_SETUP.md) for detailed instructions.
-
-### 4. Start Development
-
+5. Setup database:
 ```bash
-# Local development
-pnpm dev
+pnpm db:setup
+```
 
-# Or with Docker
+## Running the Application
+
+### Local Development
+
+Start both API and web services:
+```bash
+pnpm dev
+```
+
+Start services individually:
+```bash
+pnpm dev:api    # API only
+pnpm dev:web    # Web only
+```
+
+### Docker
+
+Start all services with Docker:
+```bash
 pnpm docker:dev
 ```
 
-## 📋 Environment Variables
+Stop Docker services:
+```bash
+pnpm docker:dev:down
+```
 
-All environment variables are in the root `.env` file.
+## Prisma Commands
 
-**Required Values:**
-- `OPENROUTER_API_KEY` - Your OpenRouter API key (already set)
-- `DATABASE_URL` - PostgreSQL connection string
-- `JWT_SECRET` - Generate with `openssl rand -base64 32`
+### Database Setup
+```bash
+# Generate Prisma Client and run migrations
+pnpm db:setup
+```
 
-## 🏗️ Project Structure
+### Generate Prisma Client
+```bash
+pnpm prisma:generate
+```
+
+### Database Migrations
+```bash
+# Deploy migrations (production)
+pnpm migrate
+
+# Create new migration (development)
+pnpm migrate:dev
+
+# Check migration status
+pnpm migrate:status
+```
+
+### Prisma Studio (Database GUI)
+```bash
+cd packages/prisma
+pnpm prisma studio
+```
+
+## API Documentation
+
+### Base URL
+```
+http://localhost:3000/api/v1
+```
+
+### Authentication Endpoints
+
+- `POST /api/v1/auth/register` - Register a new user
+- `POST /api/v1/auth/login` - Login and get JWT token
+- `GET /api/v1/auth/me` - Get current user profile (requires authentication)
+- `POST /api/v1/auth/openrouter-key` - Update OpenRouter API key (requires authentication)
+- `DELETE /api/v1/auth/openrouter-key` - Remove OpenRouter API key (requires authentication)
+
+### Query Endpoints
+
+- `POST /api/v1/query/execute` - Execute natural language query (requires authentication)
+- `GET /api/v1/query/history` - Get query history (requires authentication)
+- `GET /api/v1/query/history/:id` - Get specific query by ID (requires authentication)
+
+### Schema Endpoints
+
+- `GET /api/v1/schema/connection/:connectionId` - Get database schema (requires authentication)
+- `GET /api/v1/schema/connection/:connectionId/embed` - Get schema for embedding (requires authentication)
+- `GET /api/v1/schema/connection/:connectionId/tables` - Get tables with row counts (requires authentication)
+
+### Admin Endpoints
+
+- `GET /api/v1/admin/connections` - Get all database connections (requires authentication)
+
+### Health Check
+
+- `GET /health` - Health check endpoint (no authentication required)
+- `GET /api/v1/health` - Health check with API prefix (no authentication required)
+
+### Authentication
+
+Most endpoints require JWT authentication. Include the token in the Authorization header:
+```
+Authorization: Bearer <your-jwt-token>
+```
+
+## Services and Ports
+
+- **API Server**: http://localhost:3000/api/v1
+- **Web Application**: http://localhost:3001
+- **Health Check**: http://localhost:3000/health
+
+## Project Structure
 
 ```
 askyourdatabase/
 ├── apps/
-│   ├── api/          # NestJS backend
-│   └── web/          # Next.js frontend
+│   ├── api/          # NestJS backend API
+│   └── web/          # Next.js frontend application
 ├── packages/
-│   ├── prisma/       # Database schema
+│   ├── prisma/       # Database schema and migrations
 │   ├── types/        # Shared TypeScript types
-│   ├── ui/           # Shared UI components
-│   └── embeddings/   # Vector operations
+│   └── ui/           # Shared UI components
 └── infra/
-    ├── docker/       # Docker configurations
-    └── terraform/    # Infrastructure as Code
+    └── docker/       # Docker configurations
 ```
 
-## 📚 Documentation
-
-- `DOCKER_SETUP.md` - **Docker setup guide (everything automated!)** ⭐
-- `DATABASE_SETUP.md` - Database setup and migration guide
-- `ENV_MASTER_GUIDE.md` - Environment variables guide
-- `ENV_REQUIREMENTS.md` - Complete variable list
-- `QUICKSTART.md` - Quick start guide
-- `ENV_STRATEGY.md` - Why we use a master file
-
-## 🔧 Available Commands
-
-```bash
-# Development
-pnpm dev              # Start both API and Web
-pnpm dev:api          # Start API only
-pnpm dev:web          # Start Web only
-
-# Docker (Everything automated! 🚀)
-pnpm docker:dev       # Start everything: DB, migrations, API, Web (all automated)
-pnpm docker:dev:down  # Stop all services
-pnpm docker:prod      # Production with Docker
-pnpm docker:logs      # View logs
-pnpm docker:clean     # Clean everything (removes volumes)
-
-# Setup
-pnpm setup:env        # Create all .env files
-pnpm db:setup        # Setup database (generate client + run migrations)
-
-# Database
-pnpm migrate         # Deploy migrations (production)
-pnpm migrate:dev     # Create new migration (development)
-pnpm migrate:status  # Check migration status
-pnpm prisma:generate # Generate Prisma Client
-```
-
-## 🌐 Services
-
-- **API:** http://localhost:3000/api/v1
-- **Web:** http://localhost:3001
-- **Health:** http://localhost:3000/health
-
-## 📝 License
+## License
 
 Private
-

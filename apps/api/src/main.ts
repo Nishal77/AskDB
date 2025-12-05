@@ -9,7 +9,7 @@ const logger = new Logger('Bootstrap');
 async function bootstrap() {
   try {
     // Validate environment configuration before creating app
-    const config = getEnvConfig();
+  const config = getEnvConfig();
     logger.log(`Starting ${config.appName} v${config.appVersion}`);
 
     const app = await NestFactory.create(AppModule, {
@@ -21,7 +21,7 @@ async function bootstrap() {
       ? process.env.FRONTEND_URL.split(',').map((url) => url.trim())
       : ['http://localhost:3001', 'http://localhost:3000'];
     
-    app.enableCors({
+  app.enableCors({
       origin: (origin, callback) => {
         // Allow requests with no origin (mobile apps, Postman, etc.)
         if (!origin) {
@@ -35,44 +35,44 @@ async function bootstrap() {
           callback(new Error('Not allowed by CORS'));
         }
       },
-      credentials: true,
+    credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
       exposedHeaders: ['Authorization'],
-    });
+  });
 
     // Global exception handling
-    app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(new HttpExceptionFilter());
 
     // Request validation and transformation
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
         forbidNonWhitelisted: false,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
         skipMissingProperties: true,
         skipNullProperties: true,
         skipUndefinedProperties: true,
         stopAtFirstError: true,
-        exceptionFactory: (errors) => {
-          const messages = errors.map((error) => {
-            const constraints = error.constraints || {};
-            return Object.values(constraints).join(', ');
-          });
-          return new BadRequestException(messages.join('; '));
-        },
-      }),
-    );
+      exceptionFactory: (errors) => {
+        const messages = errors.map((error) => {
+          const constraints = error.constraints || {};
+          return Object.values(constraints).join(', ');
+        });
+        return new BadRequestException(messages.join('; '));
+      },
+    }),
+  );
 
     // API prefix (health check excluded)
-    app.setGlobalPrefix('api/v1', {
-      exclude: ['/health'],
-    });
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['/health'],
+  });
 
-    await app.listen(config.port);
+  await app.listen(config.port);
     logger.log(`API running on http://localhost:${config.port}/api/v1`);
   } catch (error) {
     logger.error('Failed to start application', error instanceof Error ? error.stack : error);
