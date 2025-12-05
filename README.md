@@ -4,9 +4,9 @@ AI-powered system that enables users to query databases using natural language i
 
 ## Demo Video
 
-<video src="demo/demo.MOV" width="800" controls>
-  Your browser does not support the video tag.
-</video>
+[Watch Demo Video →](demo/demo.MOV)
+
+*Note: GitHub README files don't support embedded video playback. Click the link above to view or download the video. For better browser compatibility, consider converting to MP4 format.*
 
 ## Prerequisites
 
