@@ -12,7 +12,7 @@ AI-powered system that enables users to query databases using natural language i
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone (https://github.com/Nishal77/AskDB.git)
 cd Askyourdatabase
 ```
 
