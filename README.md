@@ -4,7 +4,8 @@ AI-powered system that enables users to query databases using natural language i
 
 ## Demo Video
 
-[demo.mp3](https://github.com/user-attachments/files/23968957/demo.mp3)
+https://github.com/user-attachments/assets/bbfe51fa-946b-4c43-9451-d612f1cb867d
+
 
 ## Prerequisites
 
