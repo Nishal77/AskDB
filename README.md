@@ -2,6 +2,12 @@
 
 AI-powered system that enables users to query databases using natural language instead of writing SQL queries.
 
+## Demo Video
+
+<video src="demo/demo.MOV" width="800" controls>
+  Your browser does not support the video tag.
+</video>
+
 ## Prerequisites
 
 - Node.js 18+ and pnpm 8+
