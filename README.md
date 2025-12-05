@@ -144,20 +144,6 @@ Authorization: Bearer <your-jwt-token>
 - **Web Application**: http://localhost:3001
 - **Health Check**: http://localhost:3000/health
 
-## Project Structure
-
-```
-askyourdatabase/
-├── apps/
-│   ├── api/          # NestJS backend API
-│   └── web/          # Next.js frontend application
-├── packages/
-│   ├── prisma/       # Database schema and migrations
-│   ├── types/        # Shared TypeScript types
-│   └── ui/           # Shared UI components
-└── infra/
-    └── docker/       # Docker configurations
-```
 
 ## License
 
