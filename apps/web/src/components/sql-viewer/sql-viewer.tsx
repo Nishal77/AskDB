@@ -1,6 +1,16 @@
 'use client';
 
-import Editor from '@monaco-editor/react';
+import dynamic from 'next/dynamic';
+
+// Lazy load Monaco Editor to improve initial page load
+const Editor = dynamic(() => import('@monaco-editor/react'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[200px] flex items-center justify-center border border-gray-300 rounded-lg bg-gray-50">
+      <p className="text-sm text-gray-500">Loading editor...</p>
+    </div>
+  ),
+});
 
 interface SQLViewerProps {
   sql: string;
