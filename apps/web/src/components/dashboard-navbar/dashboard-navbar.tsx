@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   Avatar,
@@ -12,9 +12,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Separator,
 } from '@askdb/ui';
-import { Settings, LogOut, User, Database, Home } from 'lucide-react';
+import { Settings, LogOut, User, Database, LayoutDashboard, MessageSquare } from 'lucide-react';
 import type { User as UserType } from '@askdb/types';
 
 interface DashboardNavbarProps {
@@ -23,115 +22,106 @@ interface DashboardNavbarProps {
 }
 
 export function DashboardNavbar({ user, onLogout }: DashboardNavbarProps) {
-  const router = useRouter();
   const pathname = usePathname();
 
-  const getInitials = (email: string | undefined) => {
+  const getInitials = (name: string | undefined, email: string | undefined) => {
+    if (name) {
+      return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+    }
     if (!email) return 'U';
-    const parts = email.split('@')[0];
-    return parts
-      .split('.')
-      .map((part) => part[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+    return email.split('@')[0].slice(0, 2).toUpperCase();
   };
 
+  const isActive = (path: string) =>
+    path === '/dashboard'
+      ? pathname === '/dashboard' || pathname.startsWith('/dashboard/connections')
+      : pathname === path || pathname.startsWith(path);
+
   return (
-    <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-16 items-center">
-        {/* Logo/Brand */}
-        <div className="mr-4 flex items-center">
-          <Link href="/dashboard" className="mr-6 flex items-center space-x-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Database className="h-5 w-5" />
-            </div>
-            <span className="hidden font-bold text-xl sm:inline-block">
-              AskYourDatabase
-            </span>
+    <nav className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-[60px] items-center justify-between">
+
+        {/* Logo */}
+        <Link href="/dashboard" className="flex items-center gap-2.5 mr-8 flex-shrink-0">
+          <div className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[#4338ca] shadow-[0_2px_8px_rgba(67,56,202,0.4)]">
+            <Database className="h-4 w-4 text-white" />
+          </div>
+          <span className="font-semibold text-[15.5px] tracking-tight text-foreground hidden sm:block">
+            AskYourDatabase
+          </span>
+        </Link>
+
+        {/* Nav Links */}
+        <div className="flex items-center gap-1 flex-1">
+          <Link
+            href="/dashboard"
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-[8px] text-sm font-medium transition-all duration-150 ${
+              isActive('/dashboard')
+                ? 'bg-[#4338ca]/10 text-[#4338ca]'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+            }`}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            <span className="hidden sm:inline">Dashboard</span>
+          </Link>
+          <Link
+            href="/query"
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-[8px] text-sm font-medium transition-all duration-150 ${
+              isActive('/query')
+                ? 'bg-[#4338ca]/10 text-[#4338ca]'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+            }`}
+          >
+            <MessageSquare className="h-4 w-4" />
+            <span className="hidden sm:inline">Query</span>
           </Link>
         </div>
 
-        {/* Navigation Links */}
-        <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
-          <div className="w-full flex-1 md:w-auto md:flex-none">
-            <nav className="flex items-center space-x-6 text-sm font-medium">
-              <Link
-                href="/dashboard"
-                className={`transition-colors hover:text-foreground/80 flex items-center gap-2 ${
-                  pathname === '/dashboard' || pathname.startsWith('/dashboard/connections')
-                    ? 'text-foreground'
-                    : 'text-foreground/60'
-                }`}
-              >
-                <Home className="h-4 w-4" />
-                <span className="hidden sm:inline">Dashboard</span>
+        {/* User Menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className="relative h-9 w-9 rounded-full p-0 focus-visible:ring-2 focus-visible:ring-[#4338ca] focus-visible:ring-offset-2"
+            >
+              <Avatar className="h-9 w-9 ring-2 ring-border">
+                <AvatarFallback className="bg-[#4338ca] text-white text-sm font-semibold">
+                  {getInitials(user?.name, user?.email)}
+                </AvatarFallback>
+              </Avatar>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-60 rounded-[12px] shadow-xl border border-border/60 p-1.5" align="end" forceMount>
+            <DropdownMenuLabel className="font-normal px-3 py-2.5">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-semibold leading-none text-foreground">{user?.name || 'User'}</p>
+                <p className="text-xs leading-none text-muted-foreground mt-1">{user?.email}</p>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator className="my-1" />
+            <DropdownMenuItem asChild className="rounded-[8px] cursor-pointer px-3 py-2 text-sm font-medium gap-2.5">
+              <Link href="/dashboard/settings">
+                <Settings className="h-4 w-4 text-muted-foreground" />
+                Settings
               </Link>
-              <Link
-                href="/query"
-                className={`transition-colors hover:text-foreground/80 flex items-center gap-2 ${
-                  pathname === '/query' ? 'text-foreground' : 'text-foreground/60'
-                }`}
-              >
-                <Database className="h-4 w-4" />
-                <span className="hidden sm:inline">Query</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="rounded-[8px] cursor-pointer px-3 py-2 text-sm font-medium gap-2.5">
+              <Link href="/dashboard">
+                <User className="h-4 w-4 text-muted-foreground" />
+                Profile
               </Link>
-            </nav>
-          </div>
-
-          <Separator orientation="vertical" className="h-6" />
-
-          {/* User Menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="relative h-10 w-10 rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                <Avatar className="h-10 w-10">
-                  <AvatarFallback className="bg-primary text-primary-foreground">
-                    {getInitials(user?.email)}
-                  </AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="end" forceMount>
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">
-                    {user?.name || 'User'}
-                  </p>
-                  <p className="text-xs leading-none text-muted-foreground">
-                    {user?.email}
-                  </p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard/settings" className="cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  <span>Settings</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard" className="cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Profile</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="cursor-pointer text-destructive focus:text-destructive"
-                onClick={onLogout}
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="my-1" />
+            <DropdownMenuItem
+              className="rounded-[8px] cursor-pointer text-red-500 focus:text-red-500 focus:bg-red-500/8 px-3 py-2 text-sm font-medium gap-2.5"
+              onClick={onLogout}
+            >
+              <LogOut className="h-4 w-4" />
+              Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </nav>
   );
 }
-

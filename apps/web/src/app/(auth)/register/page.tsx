@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { authApi } from '../../../lib/api';
 import { Button, Input, Checkbox } from '@askdb/ui';
 import type { RegisterDto } from '@askdb/types';
@@ -11,7 +12,6 @@ import { Eye, EyeOff } from 'lucide-react';
 export default function RegisterPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState<RegisterDto>({
     name: '',
@@ -22,32 +22,33 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const name = (formData.name || '').trim();
+    const email = (formData.email || '').trim().toLowerCase();
+    const password = (formData.password || '').trim();
+    const phone = (formData.phone || '').trim() || undefined;
+
+    if (!name) { toast.error('Name is required'); return; }
+    if (!email) { toast.error('Email is required'); return; }
+    if (!password) { toast.error('Password is required'); return; }
+    if (password.length < 6) { toast.error('Password must be at least 6 characters'); return; }
+
     setLoading(true);
-    setError(null);
+    const loadingToast = toast.loading('Creating your account…');
 
     try {
-      const phoneValue = (formData.phone || '').trim();
-      const registerData: RegisterDto = {
-        name: (formData.name || '').trim(),
-        email: (formData.email || '').trim().toLowerCase(),
-        phone: phoneValue || undefined,
-        password: (formData.password || '').trim(),
-      };
-
-      if (!registerData.name) { setError('Name is required'); setLoading(false); return; }
-      if (!registerData.email) { setError('Email is required'); setLoading(false); return; }
-      if (!registerData.password) { setError('Password is required'); setLoading(false); return; }
-      if (registerData.password.length < 6) { setError('Password must be at least 6 characters long'); setLoading(false); return; }
-
-      await authApi.register(registerData);
+      await authApi.register({ name, email, phone, password });
+      toast.dismiss(loadingToast);
+      toast.success('Account created! Please sign in.');
       router.push('/login');
     } catch (err: any) {
-      const errorMessage =
+      toast.dismiss(loadingToast);
+      const message =
         err?.response?.data?.message ||
         err?.response?.data?.error ||
         err?.message ||
         'Registration failed. Please check your input and try again.';
-      setError(errorMessage);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -114,12 +115,6 @@ export default function RegisterPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
-                {error}
-              </div>
-            )}
-
             {/* Name */}
             <div className="space-y-2">
               <label htmlFor="name" className="text-sm font-semibold text-foreground">Name</label>
@@ -213,7 +208,14 @@ export default function RegisterPage() {
                 className="w-full h-12 rounded-[8px] bg-[#4338ca] hover:bg-[#3730a3] text-white text-base font-semibold shadow-[0_4px_14px_0_rgba(67,56,202,0.39)] transition-all hover:shadow-[0_6px_20px_rgba(67,56,202,0.23)] hover:-translate-y-[1px]"
                 disabled={loading}
               >
-                {loading ? 'Creating account...' : 'Create Account'}
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    Creating account…
+                  </span>
+                ) : (
+                  'Create Account'
+                )}
               </Button>
             </div>
 

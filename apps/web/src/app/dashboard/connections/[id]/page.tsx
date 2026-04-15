@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { toast } from 'sonner';
 import { connectionsApi, schemaApi } from '../../../../lib/api';
 import { Button, Card, CardHeader, CardTitle, CardContent, Badge, Spinner } from '@askdb/ui';
 import type { DatabaseConnection } from '@askdb/types';
 import Link from 'next/link';
-import { Database, ArrowLeft, RefreshCw, CheckSquare, Square, Server, Activity } from 'lucide-react';
+import { Database, ArrowLeft, RefreshCw, CheckSquare, Square, Server, Activity, AlertCircle } from 'lucide-react';
 
 interface TableInfo {
   tableName: string;
@@ -23,44 +24,77 @@ export default function ConnectionDetailsPage() {
   const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [tableError, setTableError] = useState<string | null>(null);
 
-  const loadTables = async () => {
+  // Prevent React StrictMode double-fire and concurrent fetches
+  const fetchingRef = useRef(false);
+
+  const extractMsg = (err: any, fallback: string) =>
+    err?.response?.data?.message ||
+    err?.response?.data?.error ||
+    err?.message ||
+    fallback;
+
+  const loadTables = useCallback(async () => {
+    if (fetchingRef.current) return; // Block concurrent fetches
+    fetchingRef.current = true;
+    setRefreshing(true);
+    setTableError(null);
     try {
-      setRefreshing(true);
       const tablesData = await schemaApi.getTablesWithRowCounts(connectionId);
       setTables(tablesData);
-      setError(null);
+      setSelectedTables(new Set(tablesData.map(t => t.tableName)));
     } catch (err: any) {
-      setError(err.message || 'Failed to load tables');
-      console.error('Error loading tables:', err);
+      const msg = extractMsg(err, 'Failed to load tables');
+      setTableError(msg);
+      toast.error(msg);
     } finally {
       setRefreshing(false);
+      fetchingRef.current = false;
     }
-  };
+  }, [connectionId]);
 
   useEffect(() => {
+    if (!connectionId) return;
+
+    let cancelled = false;
+
     const loadData = async () => {
+      // Load connection info
+      let connData: DatabaseConnection;
       try {
-        setLoading(true);
-        const [connData, tablesData] = await Promise.all([
-          connectionsApi.getById(connectionId),
-          schemaApi.getTablesWithRowCounts(connectionId),
-        ]);
+        connData = await connectionsApi.getById(connectionId);
+        if (cancelled) return;
         setConnection(connData);
+      } catch (err: any) {
+        if (cancelled) return;
+        const msg = extractMsg(err, 'Connection not found');
+        setTableError(msg);
+        setLoading(false);
+        return;
+      }
+
+      // Load tables separately so connection header still renders on failure
+      fetchingRef.current = true;
+      try {
+        const tablesData = await schemaApi.getTablesWithRowCounts(connectionId);
+        if (cancelled) return;
         setTables(tablesData);
-        // Auto-select all tables by default
         setSelectedTables(new Set(tablesData.map(t => t.tableName)));
       } catch (err: any) {
-        setError(err.message || 'Failed to load connection details');
+        if (cancelled) return;
+        const msg = extractMsg(err, 'Failed to load tables');
+        setTableError(msg);
       } finally {
-        setLoading(false);
+        fetchingRef.current = false;
+        if (!cancelled) setLoading(false);
       }
     };
 
-    if (connectionId) {
-      loadData();
-    }
+    loadData();
+
+    // Cleanup: cancel state updates if component unmounts (handles StrictMode double-fire)
+    return () => { cancelled = true; };
   }, [connectionId]);
 
   if (loading) {
@@ -74,16 +108,17 @@ export default function ConnectionDetailsPage() {
     );
   }
 
-  if (error || !connection) {
+  // Only block the full page if the connection record itself couldn't be loaded
+  if (!connection) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Card className="w-full max-w-md border">
           <CardContent className="pt-8 pb-6">
             <div className="text-center space-y-4">
-              <p className="text-destructive font-medium">{error || 'Connection not found'}</p>
-            <Button onClick={() => router.push('/dashboard')} className="w-full">
-              Back to Dashboard
-            </Button>
+              <p className="text-destructive font-medium">{tableError || 'Connection not found'}</p>
+              <Button onClick={() => router.push('/dashboard')} className="w-full">
+                Back to Dashboard
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -205,13 +240,20 @@ export default function ConnectionDetailsPage() {
           <CardContent>
             {tables.length === 0 ? (
             <div className="text-center py-16">
-              <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
-                <Database className="h-8 w-8 text-muted-foreground" />
+              <div className={`h-16 w-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${tableError ? 'bg-destructive/10' : 'bg-muted/50'}`}>
+                {tableError
+                  ? <AlertCircle className="h-8 w-8 text-destructive" />
+                  : <Database className="h-8 w-8 text-muted-foreground" />
+                }
               </div>
-              <p className="text-muted-foreground mb-4 font-medium">No tables found in this database</p>
-                {error && (
-                <p className="text-destructive text-sm mb-4">{error}</p>
-                )}
+              {tableError ? (
+                <>
+                  <p className="text-destructive font-semibold mb-1">Could not load tables</p>
+                  <p className="text-muted-foreground text-sm mb-6 max-w-sm mx-auto">{tableError}</p>
+                </>
+              ) : (
+                <p className="text-muted-foreground mb-4 font-medium">No tables found in this database</p>
+              )}
               <Button onClick={loadTables} disabled={refreshing} variant="outline" className="gap-2">
                 {refreshing ? (
                   <Spinner className="h-4 w-4" />

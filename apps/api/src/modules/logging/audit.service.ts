@@ -11,10 +11,12 @@ export interface AuditLogDto {
   userAgent?: string;
 }
 
-interface PrismaError extends Error {
-  code?: string;
-}
-
+/**
+ * Fire-and-forget audit logger.
+ * NEVER throws — any database error is swallowed and only logged at warn level.
+ * Keeping this non-throwing is critical: it is called from middleware on every
+ * request, and an uncaught error here would crash the Node process.
+ */
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
@@ -22,25 +24,24 @@ export class AuditService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async log(dto: AuditLogDto) {
+  async log(dto: AuditLogDto): Promise<void> {
     try {
-      return await this.prisma.auditLog.create({
+      await this.prisma.auditLog.create({
         data: {
-          userId: dto.userId,
+          userId: dto.userId ?? null,
           action: dto.action,
           resource: dto.resource,
-          resourceId: dto.resourceId,
+          resourceId: dto.resourceId ?? null,
           metadata: dto.metadata as any,
-          ipAddress: dto.ipAddress,
-          userAgent: dto.userAgent,
+          ipAddress: dto.ipAddress ?? null,
+          userAgent: dto.userAgent ?? null,
         },
       });
     } catch (error) {
-      if (this.isSchemaError(error)) {
-        this.logger.warn('AuditLog table missing. Run migrations: pnpm migrate');
-        return null;
-      }
-      throw error;
+      // Audit logging is non-critical — never let it crash the application.
+      const code = (error as any)?.code ?? 'UNKNOWN';
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Audit log skipped [${code}]: ${message}`);
     }
   }
 
@@ -53,16 +54,9 @@ export class AuditService {
         take: limit,
       });
     } catch (error) {
-      if (this.isSchemaError(error)) {
-        this.logger.warn('AuditLog table missing. Run migrations: pnpm migrate');
-        return [];
-      }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed to fetch audit logs: ${message}`);
+      return [];
     }
-  }
-
-  private isSchemaError(error: unknown): boolean {
-    const prismaError = error as PrismaError;
-    return prismaError?.code === 'P2021' || prismaError?.code === '42P01';
   }
 }

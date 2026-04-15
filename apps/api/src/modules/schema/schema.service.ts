@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../db/prisma.service';
 import { Pool } from 'pg';
 
@@ -38,17 +38,22 @@ export interface TableWithRowCount {
 const SSL_REQUIRED_HOSTS = [
   'neon.tech',
   'supabase.co',
+  'supabase.com',
   'aws.',
   'cloud.',
   'amazonaws.com',
   'pooler.',
+  'insforge.app',
+  '.database.',
 ] as const;
 
-const CONNECTION_TIMEOUT_MS = 10000;
+const CONNECTION_TIMEOUT_MS = 15000;
 const ERROR_ROW_COUNT = -1;
 
 @Injectable()
 export class SchemaService {
+  private readonly logger = new Logger(SchemaService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getDatabaseMetadata(connectionId: string): Promise<TableMetadata[]> {
@@ -61,9 +66,10 @@ export class SchemaService {
       return await this.buildMetadata(pool, tables);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      throw new BadRequestException(`Failed to fetch database metadata: ${message}`);
+      this.logger.warn(`Schema fetch failed for connection ${connectionId}: ${message}`);
+      throw new BadRequestException(this.humanizeError(error, connection.host));
     } finally {
-      await pool.end();
+      await pool.end().catch(() => {});
     }
   }
 
@@ -77,9 +83,10 @@ export class SchemaService {
       return await this.getRowCounts(pool, tables);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      throw new BadRequestException(`Failed to fetch tables: ${message}`);
+      this.logger.warn(`Tables fetch failed for connection ${connectionId} (${connection.host}): ${message}`);
+      throw new BadRequestException(this.humanizeError(error, connection.host));
     } finally {
-      await pool.end();
+      await pool.end().catch(() => {});
     }
   }
 
@@ -89,14 +96,33 @@ export class SchemaService {
     });
 
     if (!connection) {
-      throw new BadRequestException('Connection not found');
+      throw new BadRequestException('Connection not found. It may have been deleted.');
     }
 
     return connection;
   }
 
-  private determineSslRequirement(host: string): boolean {
-    return SSL_REQUIRED_HOSTS.some((requiredHost) => host.includes(requiredHost));
+  private determineSslRequirement(connection: {
+    host: string;
+    connectionString?: string | null;
+  }): boolean {
+    // Check the stored connection string first — most authoritative source of SSL intent
+    if (connection.connectionString) {
+      try {
+        const url = new URL(connection.connectionString);
+        const sslMode = url.searchParams.get('sslmode');
+        if (sslMode === 'require' || sslMode === 'prefer' || sslMode === 'verify-full') {
+          return true;
+        }
+        // Explicit ssl=false overrides host-based detection
+        if (sslMode === 'disable') return false;
+      } catch {
+        // Ignore URL parse errors, fall through to host-based detection
+      }
+    }
+
+    // Fall back to host-based heuristics
+    return SSL_REQUIRED_HOSTS.some((segment) => connection.host.includes(segment));
   }
 
   private createPool(connection: {
@@ -105,8 +131,9 @@ export class SchemaService {
     database: string;
     username: string;
     password: string;
+    connectionString?: string | null;
   }): Pool {
-    const requiresSsl = this.determineSslRequirement(connection.host);
+    const requiresSsl = this.determineSslRequirement(connection);
 
     return new Pool({
       host: connection.host,
@@ -117,6 +144,38 @@ export class SchemaService {
       ssl: requiresSsl ? { rejectUnauthorized: false } : false,
       connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
     });
+  }
+
+  /**
+   * Converts raw pg/network errors into actionable user-facing messages.
+   */
+  private humanizeError(error: unknown, host: string): string {
+    const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+
+    if (msg.includes('enotfound') || msg.includes('getaddrinfo')) {
+      return `Cannot reach database host "${host}". Check that the hostname is correct.`;
+    }
+    if (msg.includes('etimedout') || msg.includes('ehostunreach') || msg.includes('timeout')) {
+      return `Connection timed out for "${host}". The database may be paused, or a firewall is blocking the connection.`;
+    }
+    if (msg.includes('econnrefused')) {
+      return `Connection refused by "${host}". Verify the port and that the database is running.`;
+    }
+    if (msg.includes('password authentication failed') || msg.includes('invalid password')) {
+      return `Authentication failed for "${host}". Check the username and password.`;
+    }
+    if (msg.includes('does not exist') && msg.includes('database')) {
+      return `The database does not exist on "${host}". Check the database name.`;
+    }
+    if (msg.includes('ssl') || msg.includes('sslmode')) {
+      return `SSL error connecting to "${host}". Try adding ?sslmode=require to your connection string.`;
+    }
+    if (msg.includes('connection not found')) {
+      return 'Connection not found. It may have been deleted.';
+    }
+
+    const raw = error instanceof Error ? error.message : String(error);
+    return `Could not connect to "${host}": ${raw}`;
   }
 
   private async testConnection(pool: Pool): Promise<void> {

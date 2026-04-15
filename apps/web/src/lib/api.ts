@@ -8,6 +8,7 @@ import type {
   DatabaseConnection,
   CreateConnectionDto,
   UpdateConnectionDto,
+  ConnectionTestResult,
   ExecuteQueryDto,
   QueryResult,
   QueryHistory,
@@ -155,11 +156,35 @@ export const connectionsApi = {
     }
   },
 
-  test: async (data: CreateConnectionDto): Promise<void> => {
-    const response = await api.post<ApiResponse<null>>('/admin/connections/test', data);
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Connection test failed');
+  /**
+   * Pre-save connection test (no ID needed). Always resolves — never rejects.
+   * Check result.success to determine outcome.
+   */
+  testPreSave: async (data: CreateConnectionDto): Promise<ConnectionTestResult> => {
+    const response = await api.post<ApiResponse<ConnectionTestResult>>('/admin/connections/test', data);
+    if (response.data.success && response.data.data) {
+      return response.data.data;
     }
+    return {
+      success: false,
+      message: response.data.error || 'Connection test failed',
+      timestamp: new Date().toISOString(),
+    };
+  },
+
+  /**
+   * Test an already-saved connection by ID. Always resolves — never rejects.
+   */
+  testById: async (id: string): Promise<ConnectionTestResult> => {
+    const response = await api.post<ApiResponse<ConnectionTestResult>>(`/admin/connections/${id}/test`);
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+    return {
+      success: false,
+      message: response.data.error || 'Connection test failed',
+      timestamp: new Date().toISOString(),
+    };
   },
 
   getStatus: async (id: string): Promise<{

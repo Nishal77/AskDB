@@ -1,4 +1,8 @@
-// Database Connection Types
+// ─── Database Connection Types ────────────────────────────────────────────────
+
+export type AccessMode = 'read' | 'write' | 'update' | 'full';
+export type ConnectionType = 'postgresql' | 'mysql' | 'sqlite';
+
 export interface DatabaseConnection {
   id: string;
   userId: string;
@@ -7,23 +11,27 @@ export interface DatabaseConnection {
   port: number;
   database: string;
   username: string;
-  type: 'postgresql' | 'mysql' | 'sqlite';
+  type: ConnectionType;
+  accessMode: AccessMode;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CreateConnectionDto {
   name: string;
-  connectionString?: string; // Connection string/URL
-  anonKey?: string; // Anon key (for Supabase and similar services)
-  accessMode?: 'read' | 'write' | 'update' | 'full'; // Access mode for the connection
-  // Legacy fields (for backward compatibility)
+  /** Full database connection URI (postgresql://, mysql://, etc.) */
+  connectionString?: string;
+  /** Supabase / PostgREST anon key — stored for future REST API queries */
+  anonKey?: string;
+  /** Controls what SQL operations are permitted. Defaults to 'read'. */
+  accessMode?: AccessMode;
+  // ── Legacy individual-field support ──────────────────────────────────────
   host?: string;
   port?: number;
   database?: string;
   username?: string;
   password?: string;
-  type?: 'postgresql' | 'mysql' | 'sqlite';
+  type?: ConnectionType;
 }
 
 export interface UpdateConnectionDto {
@@ -33,6 +41,14 @@ export interface UpdateConnectionDto {
   database?: string;
   username?: string;
   password?: string;
+  accessMode?: AccessMode;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  message: string;
+  latencyMs?: number;
+  timestamp: string;
 }
 
 // Schema Types

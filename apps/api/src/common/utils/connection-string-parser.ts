@@ -54,7 +54,9 @@ export class ConnectionStringParser {
 
   private static parsePostgreSQL(connectionString: string): ParsedConnectionString {
     try {
-      const url = new URL(connectionString);
+      // Clean hidden zero-width spaces or invisible characters that break new URL()
+      const cleanStr = connectionString.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+      const url = new URL(cleanStr);
       const host = url.hostname;
       const port = url.port ? parseInt(url.port, 10) : this.DEFAULT_PORTS.postgresql;
       const database = url.pathname.slice(1) || url.searchParams.get('database') || '';
@@ -95,7 +97,8 @@ export class ConnectionStringParser {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException('Invalid PostgreSQL connection string');
+      const errReason = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Invalid PostgreSQL connection string: ${errReason}`);
     }
   }
 
