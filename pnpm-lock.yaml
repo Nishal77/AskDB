@@ -215,25 +215,6 @@ importers:
         specifier: ^5.3.3
         version: 5.9.3
 
-  packages/embeddings:
-    dependencies:
-      openai:
-        specifier: ^4.20.1
-        version: 4.104.0
-      pg:
-        specifier: ^8.11.3
-        version: 8.16.3
-      pgvector:
-        specifier: ^0.1.8
-        version: 0.1.8
-    devDependencies:
-      '@types/pg':
-        specifier: ^8.10.9
-        version: 8.15.6
-      typescript:
-        specifier: ^5.3.3
-        version: 5.9.3
-
   packages/prisma:
     dependencies:
       '@prisma/client':
@@ -354,9 +335,6 @@ importers:
       lucide-react:
         specifier: '*'
         version: 0.303.0(react@18.3.1)
-      next-themes:
-        specifier: ^0.2.1
-        version: 0.2.1(next@14.2.33)(react-dom@18.3.1)(react@18.3.1)
       react:
         specifier: ^18.2.0
         version: 18.3.1

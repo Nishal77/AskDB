@@ -67,9 +67,9 @@ async function bootstrap() {
     }),
   );
 
-    // API prefix (health check excluded)
+    // API prefix (health check and root excluded)
   app.setGlobalPrefix('api/v1', {
-    exclude: ['/health'],
+    exclude: ['/health', '/'],
   });
 
   await app.listen(config.port);
