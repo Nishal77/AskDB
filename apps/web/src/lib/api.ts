@@ -39,7 +39,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isAuthEndpoint =
+      error.config?.url?.includes('/auth/login') ||
+      error.config?.url?.includes('/auth/register');
+
+    // Only redirect to /login on 401 from non-auth endpoints (i.e. expired session).
+    // Never redirect on the login/register endpoints themselves — let the form handle it.
+    if (error.response?.status === 401 && !isAuthEndpoint) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('access_token');
         window.location.href = '/login';
@@ -226,6 +232,29 @@ export const schemaApi = {
       return response.data.data;
     }
     throw new Error(response.data.error || 'Failed to fetch tables with row counts');
+  },
+};
+
+// LLM / Key Info API
+export interface OpenRouterKeyInfo {
+  label: string;
+  limit: number | null;
+  limitReset: string | null;
+  limitRemaining: number | null;
+  usage: number;
+  usageDaily: number;
+  usageWeekly: number;
+  usageMonthly: number;
+  isFreeTier: boolean;
+}
+
+export const llmApi = {
+  getKeyInfo: async (): Promise<OpenRouterKeyInfo | null> => {
+    const response = await api.get<ApiResponse<OpenRouterKeyInfo | null>>('/llm/key-info');
+    if (response.data.success) {
+      return response.data.data ?? null;
+    }
+    return null;
   },
 };
 

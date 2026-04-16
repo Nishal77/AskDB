@@ -29,11 +29,8 @@ export class LlmService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    if (this.isOpenRouter) {
-      this.testApiKey().catch((error) => {
-        this.logger.warn('API key test failed', error);
-      });
-    }
+    const keyPreview = this.defaultApiKey.substring(0, 16) + '…';
+    this.logger.log(`LLM ready — model: ${this.defaultModel}, key: ${keyPreview}, fallbacks: ${this.fallbackModels.length - 1}`);
   }
 
   async generateSQL(
@@ -145,25 +142,31 @@ export class LlmService implements OnModuleInit {
   private initializeModel(): string {
     const openrouterModel = this.configService.get<string>('OPENROUTER_MODEL');
     const openaiModel = this.configService.get<string>('OPENAI_MODEL');
-    
+
     return this.isOpenRouter
-      ? openrouterModel || openaiModel || 'openai/gpt-4-turbo-preview'
+      ? openrouterModel || openaiModel || 'qwen/qwen3-coder:free'
       : openaiModel || 'gpt-4-turbo-preview';
   }
 
   private initializeFallbackModels(): string[] {
     const fallbackModelsEnv = this.configService.get<string>('OPENROUTER_FALLBACK_MODELS');
+    // Verified-live free models as of 2026-04, ordered by SQL quality
     const defaultFallbacks = [
-      'tngtech/deepseek-r1t2-chimera:free',
-      'qwen/qwen3-coder:free',
+      'openai/gpt-oss-120b:free',
+      'nvidia/nemotron-3-super-120b-a12b:free',
+      'google/gemma-4-31b-it:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemma-3-27b-it:free',
+      'nousresearch/hermes-3-llama-3.1-405b:free',
+      'openai/gpt-oss-20b:free',
     ];
-    
+
     const customFallbacks = fallbackModelsEnv
       ? fallbackModelsEnv.split(',').map((m) => m.trim()).filter(Boolean)
       : defaultFallbacks;
-    
-    const fallbackModels = [this.defaultModel, ...customFallbacks];
-    return [...new Set(fallbackModels)];
+
+    // Primary model first, then fallbacks (deduped)
+    return [...new Set([this.defaultModel, ...customFallbacks])];
   }
 
   private createOpenAIClient(apiKey: string): OpenAI {
@@ -180,39 +183,6 @@ export class LlmService implements OnModuleInit {
           }
         : undefined,
     });
-  }
-
-  private async testApiKey(): Promise<void> {
-    try {
-      const response = await this.defaultOpenai.chat.completions.create({
-        model: 'openai/gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'user',
-            content: 'Say "test"',
-          },
-        ],
-        max_tokens: 5,
-      });
-      
-      if (!response.choices[0]?.message?.content) {
-        throw new Error('Empty response from API');
-      }
-    } catch (error) {
-      const apiError = error as ApiError;
-      if (apiError.status === 401 || apiError.code === 'invalid_api_key') {
-        const keyPreview =
-          this.defaultApiKey.substring(0, 12) +
-          '...' +
-          this.defaultApiKey.substring(this.defaultApiKey.length - 4);
-        throw new Error(`Invalid API key: ${keyPreview}. Verify at https://openrouter.ai/keys`);
-      } else if (apiError.status === 402) {
-        throw new Error('Insufficient credits. Add credits to your OpenRouter account');
-      } else if (apiError.status === 429) {
-        throw new Error('Rate limit exceeded. Try again later');
-      }
-      throw error;
-    }
   }
 
   private getOpenAIClient(userOpenRouterKey?: string | null): OpenAI {
@@ -265,12 +235,23 @@ export class LlmService implements OnModuleInit {
       const isLastAttempt = i === models.length - 1;
 
       try {
+        this.logger.debug(`Trying model [${i + 1}/${models.length}]: ${model}`);
         return await attemptFn(openai, model);
       } catch (error) {
         lastError = error as ApiError;
-        const shouldStop = this.shouldStopRetrying(lastError);
+        const reason = this.classifyError(lastError);
 
-        if (shouldStop || isLastAttempt) {
+        this.logger.warn(
+          `Model ${model} failed (${reason}) — ${isLastAttempt ? 'no more fallbacks' : 'trying next'}`,
+        );
+
+        // Stop immediately only for bad-key or network-down errors.
+        // 404 (dead model), 429 (rate limit), 402 (credits) all try next fallback.
+        if (reason === 'auth' || reason === 'network') {
+          break;
+        }
+
+        if (isLastAttempt) {
           break;
         }
       }
@@ -279,12 +260,15 @@ export class LlmService implements OnModuleInit {
     throw this.createErrorFromLastAttempt(lastError, errorMessage);
   }
 
-  private shouldStopRetrying(error: ApiError): boolean {
-    const isAuthError = error.status === 401 || error.code === 'invalid_api_key';
-    const isNetworkError =
-      error.message?.includes('network') || error.message?.includes('ECONNREFUSED');
-    return isAuthError || isNetworkError;
+  private classifyError(error: ApiError): 'auth' | 'network' | 'ratelimit' | 'nocredits' | 'nomodel' | 'other' {
+    if (error.status === 401 || error.code === 'invalid_api_key') return 'auth';
+    if (error.message?.includes('ECONNREFUSED') || error.message?.includes('ENOTFOUND') || error.message?.includes('network')) return 'network';
+    if (error.status === 429) return 'ratelimit';
+    if (error.status === 402) return 'nocredits';
+    if (error.status === 404 || error.message?.includes('No endpoints found')) return 'nomodel';
+    return 'other';
   }
+
 
   private async createChatCompletion(
     openai: OpenAI,
@@ -308,35 +292,26 @@ export class LlmService implements OnModuleInit {
   }
 
   private createErrorFromLastAttempt(lastError: ApiError | null, defaultMessage: string): Error {
-    if (!lastError) {
-      return new Error(defaultMessage);
-    }
+    if (!lastError) return new Error(defaultMessage);
 
-    if (lastError.status === 401 || lastError.code === 'invalid_api_key') {
+    const reason = this.classifyError(lastError);
+
+    if (reason === 'auth') {
       const keyPreview =
-        this.defaultApiKey.substring(0, 12) +
-        '...' +
-        this.defaultApiKey.substring(this.defaultApiKey.length - 4);
+        this.defaultApiKey.substring(0, 12) + '...' + this.defaultApiKey.substring(this.defaultApiKey.length - 4);
       return new Error(`Invalid API key: ${keyPreview}. Check OPENROUTER_API_KEY in .env`);
-        }
-        
-    if (lastError.status === 429) {
-      return new Error('Rate limit exceeded. Try again later');
-        }
-
-    if (lastError.status === 402) {
-      return new Error('Insufficient credits. Add credits or use free tier models');
-  }
-
-    if (lastError.message?.includes('401')) {
-      return new Error('Authentication failed. Verify OPENROUTER_API_KEY is correct');
     }
-
-    if (
-      lastError.message?.includes('network') ||
-      lastError.message?.includes('ECONNREFUSED')
-    ) {
-      return new Error('Network error. Check your connection');
+    if (reason === 'ratelimit') {
+      return new Error('All AI models are rate-limited right now. Please wait a moment and try again.');
+    }
+    if (reason === 'nocredits') {
+      return new Error('Insufficient credits on your OpenRouter account.');
+    }
+    if (reason === 'nomodel') {
+      return new Error('All fallback AI models are temporarily unavailable. Please try again shortly.');
+    }
+    if (reason === 'network') {
+      return new Error('Cannot reach AI service. Check your internet connection.');
     }
 
     return new Error(`${defaultMessage}: ${lastError.message || 'Unknown error'}`);

@@ -73,6 +73,8 @@ const SSL_REQUIRED_HOSTS = [
   'cloud.',
   'amazonaws.com',
   'pooler.',
+  'insforge.app',
+  '.database.',
 ] as const;
 
 const POOL_CONNECTION_TIMEOUT_MS = 15000;
@@ -482,7 +484,10 @@ export class AdminService {
     username: string;
     password: string;
     type: string;
+    connectionString?: string | null;
   }): ConnectionDetails {
+    // Detect SSL from stored connectionString first, then host-based heuristics
+    const requiresSsl = this.detectSslFromRecord(connection);
     return {
       host: connection.host,
       port: connection.port,
@@ -490,7 +495,25 @@ export class AdminService {
       username: connection.username,
       password: connection.password,
       type: connection.type as 'postgresql' | 'mysql' | 'sqlite',
+      requiresSsl,
     };
+  }
+
+  private detectSslFromRecord(connection: {
+    host: string;
+    connectionString?: string | null;
+  }): boolean {
+    if (connection.connectionString) {
+      try {
+        const url = new URL(connection.connectionString);
+        const sslMode = url.searchParams.get('sslmode');
+        if (sslMode === 'require' || sslMode === 'prefer' || sslMode === 'verify-full') return true;
+        if (sslMode === 'disable') return false;
+      } catch {
+        // fall through to host-based detection
+      }
+    }
+    return this.determineSslRequirement(connection.host);
   }
 
   private extractErrorMessage(error: unknown): string {

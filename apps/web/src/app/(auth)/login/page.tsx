@@ -35,11 +35,21 @@ export default function LoginPage() {
       router.push('/dashboard');
     } catch (err: any) {
       toast.dismiss(loadingToast);
-      const message =
+      const status = err?.response?.status;
+      const serverMessage =
         err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        err?.message ||
-        'Invalid email or password. Please try again.';
+        err?.response?.data?.error;
+
+      const message =
+        status === 401
+          ? 'Invalid email or password.'
+          : status === 429
+          ? 'Too many attempts. Please wait a moment and try again.'
+          : serverMessage ||
+            (err?.message === 'Network Error'
+              ? 'Cannot reach server. Please check your connection.'
+              : err?.message || 'Sign in failed. Please try again.');
+
       toast.error(message);
     } finally {
       setLoading(false);

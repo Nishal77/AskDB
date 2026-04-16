@@ -1,19 +1,15 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
+const MAX_RETRIES = 5;
+const RETRY_DELAY_MS = 3000;
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
 
   async onModuleInit() {
-    try {
-      await this.$connect();
-      this.logger.log('Database connected');
-      await this.validateDatabaseSchema();
-    } catch (error) {
-      this.handleConnectionError(error);
-      throw error;
-    }
+    await this.connectWithRetry();
   }
 
   async onModuleDestroy() {
@@ -21,42 +17,58 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     this.logger.log('Database disconnected');
   }
 
-  private async validateDatabaseSchema() {
+  private async connectWithRetry(): Promise<void> {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await this.$connect();
+        this.logger.log('Database connected');
+        await this.validateDatabaseSchema();
+        return; // success
+      } catch (error) {
+        const isLast = attempt === MAX_RETRIES;
+        const message = error instanceof Error ? error.message : String(error);
+
+        if (isLast) {
+          this.logger.error(
+            `Database connection failed after ${MAX_RETRIES} attempts — API will start but DB queries will fail until connection recovers`,
+          );
+          this.logger.error(message);
+          // Do NOT throw — let the API start so at least CORS/health routes respond.
+          // Individual requests will get a proper DB error when they try to query.
+          return;
+        }
+
+        this.logger.warn(
+          `Database connection attempt ${attempt}/${MAX_RETRIES} failed. Retrying in ${RETRY_DELAY_MS / 1000}s… (${message})`,
+        );
+        await this.delay(RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  private async validateDatabaseSchema(): Promise<void> {
     try {
       await this.user.findFirst({ take: 0 });
       this.logger.log('Database schema validated');
     } catch (error) {
       if (this.isSchemaError(error)) {
-        this.logger.error('Database tables missing. Run migrations: pnpm migrate');
-        throw new Error('Database tables missing. Run migrations: pnpm migrate');
+        this.logger.error('Database tables missing — run: pnpm prisma db push');
+        throw new Error('Database tables missing. Run: pnpm prisma db push');
       }
-      this.logger.warn('Schema check failed, but database is connected');
-    }
-  }
-
-  private handleConnectionError(error: unknown) {
-    if (!(error instanceof Error)) {
-      this.logger.error('Unable to connect to database');
-      return;
-    }
-
-    this.logger.error('Database connection failed', error);
-
-    if (error.message?.includes('does not exist')) {
-      this.logger.error('Database tables missing. Run migrations: pnpm migrate');
-    } else if (error.message?.includes('P1001') || error.message?.includes('connect')) {
-      this.logger.error('Check DATABASE_URL and ensure database server is running');
+      this.logger.warn('Schema check skipped — database is connected but schema check failed');
     }
   }
 
   private isSchemaError(error: unknown): boolean {
-    if (!(error instanceof Error)) {
-      return false;
-    }
+    if (!(error instanceof Error)) return false;
     return (
       error.message?.includes('does not exist') ||
       (error as any).code === '42P01' ||
       (error as any).code === 'P2021'
     );
-    }
   }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}

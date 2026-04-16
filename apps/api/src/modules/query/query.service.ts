@@ -23,10 +23,13 @@ export interface QueryResult {
 const SSL_REQUIRED_HOSTS = [
   'neon.tech',
   'supabase.co',
+  'supabase.com',
   'aws.',
   'cloud.',
   'amazonaws.com',
   'pooler.',
+  'insforge.app',
+  '.database.',
 ] as const;
 
 const DANGEROUS_KEYWORDS = [
@@ -91,7 +94,7 @@ export class QueryService {
   }
 
   private validateReadOnlyAccess(
-    connection: { host: string; port: number; database: string; username: string; password: string; type: string },
+    connection: { host: string; port: number; database: string; username: string; password: string; type: string; connectionString?: string | null },
     sql: string,
   ): void {
     const accessMode = (connection as any).accessMode || DEFAULT_ACCESS_MODE;
@@ -112,11 +115,11 @@ export class QueryService {
       }
 
   private async executeDatabaseQuery(
-    connection: { host: string; port: number; database: string; username: string; password: string },
+    connection: { host: string; port: number; database: string; username: string; password: string; connectionString?: string | null },
     sql: string,
     startTime: number,
   ): Promise<QueryResult> {
-    const requiresSsl = this.determineSslRequirement(connection.host);
+    const requiresSsl = this.detectSsl(connection);
     const pool = this.createPool(connection, requiresSsl);
 
     try {
@@ -138,8 +141,16 @@ export class QueryService {
     }
   }
 
-  private determineSslRequirement(host: string): boolean {
-    return SSL_REQUIRED_HOSTS.some((requiredHost) => host.includes(requiredHost));
+  private detectSsl(connection: { host: string; connectionString?: string | null }): boolean {
+    if (connection.connectionString) {
+      try {
+        const url = new URL(connection.connectionString);
+        const sslMode = url.searchParams.get('sslmode');
+        if (sslMode === 'require' || sslMode === 'prefer' || sslMode === 'verify-full') return true;
+        if (sslMode === 'disable') return false;
+      } catch { /* fall through */ }
+    }
+    return SSL_REQUIRED_HOSTS.some((h) => connection.host.includes(h));
   }
 
   private createPool(
